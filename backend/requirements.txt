@@ -1,1 +1,11 @@
 jwt
+fastapi
+uvicorn
+pydantic
+pymongo
+psycopg2-binary
+python-jose
+passlib[bcrypt]
+schedule
+email-validator
+python-multipart
