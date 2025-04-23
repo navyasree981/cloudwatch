@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Weather Alerts</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      }
+
+      body {
+        background-color: #f5f7fa;
+        color: #333;
+      }
+      /* Sidebar Navigation */
+      .sidebar {
+        position: fixed;
+        top: 0;
+        left: -250px;
+        width: 250px;
+        height: 100%;
+        background-color: #181818;
+        transition: left 0.3s ease;
+        z-index: 999;
+        box-shadow: 2px 0 5px rgba(0, 0, 0, 0.5);
+      }
+
+      .sidebar.active {
+        left: 0;
+      }
+
+      .sidebar-header {
+        padding: 20px;
+        background-color: #121212;
+        text-align: center;
+        font-size: 1.2rem;
+        font-weight: bold;
+        color: #fafafa;
+      }
+
+      .sidebar-menu {
+        list-style: none;
+        padding: 10px 0;
+      }
+
+      .sidebar-menu li {
+        padding: 15px 20px;
+        border-bottom: 1px solid #2a2a2a;
+        transition: background-color 0.3s;
+      }
+
+      .sidebar-menu li:hover {
+        background-color: #2a2a2a;
+      }
+
+      .sidebar-menu a {
+        color: #ddd;
+        text-decoration: none;
+        display: block;
+      }
+
+      .sidebar-menu i {
+        margin-right: 10px;
+        width: 20px;
+        text-align: center;
+      }
+
+      /* Overlay when sidebar is active */
+      .overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        z-index: 998;
+        display: none;
+      }
+
+      .overlay.active {
+        display: block;
+      }
+
+      /* Header Styles */
+      header {
+        background-color: #212121;
+        padding: 15px 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .logo-container {
+        display: flex;
+        align-items: center;
+      }
+
+      .hamburger-menu {
+        margin-right: 15px;
+        cursor: pointer;
+        font-size: 1.5rem;
+        z-index: 1000;
+        color: #fafafa;
+      }
+
+      .logo {
+        display: flex;
+        align-items: center;
+        font-size: 1.5rem;
+        font-weight: bold;
+        color: #fafafa;
+      }
+
+      nav ul {
+        display: flex;
+        list-style: none;
+      }
+
+      nav ul li {
+        margin-left: 20px;
+      }
+
+      nav ul li a {
+        color: white;
+        text-decoration: none;
+      }
+
+      /* User info in header */
+      .user-info {
+        display: flex;
+        align-items: center;
+        margin-left: auto;
+        font-size: 14px;
+        color: #ddd;
+      }
+
+      .user-info span {
+        margin-right: 10px;
+      }
+
+      .logout-btn {
+        background: transparent;
+        color: #ff4444;
+        border: 1px solid #ff4444;
+        padding: 5px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.3s;
+      }
+
+      .logout-btn:hover {
+        background: #ff4444;
+        color: white;
+      }
+
+      .container {
+        max-width: 1200px;
+        padding: 20px;
+        margin: 0 auto;
+      }
+
+      h1 {
+        text-align: center;
+        color: #333;
+        margin-bottom: 30px;
+        font-weight: 500;
+      }
+
+      .alert {
+        margin-bottom: 12px;
+        padding: 12px 16px;
+        border-radius: 6px;
+        font-size: 14px;
+        display: flex;
+        align-items: center;
+      }
+
+      .alert i {
+        margin-right: 10px;
+        font-size: 18px;
+      }
+
+      .severe-alert {
+        background-color: #fee2e2;
+        color: #b91c1c;
+        border-left: 4px solid #b91c1c;
+      }
+
+      .moderate-alert {
+        background-color: #fef3c7;
+        color: #92400e;
+        border-left: 4px solid #f59e0b;
+      }
+
+      .normal-alert {
+        background-color: #dcfce7;
+        color: #166534;
+        border-left: 4px solid #10b981;
+      }
+
+      .info-alert {
+        background-color: #e0f2fe;
+        color: #0369a1;
+        border-left: 4px solid #0ea5e9;
+      }
+
+      .notification-section {
+        margin-bottom: 30px;
+      }
+
+      .alert-location {
+        font-weight: 600;
+      }
+
+      .location-header {
+        margin-top: 20px;
+        margin-bottom: 10px;
+        font-size: 18px;
+        color: #333;
+        border-bottom: 1px solid #ddd;
+        padding-bottom: 5px;
+      }
+
+      .no-alerts {
+        padding: 15px;
+        background-color: #f0f0f0;
+        border-radius: 6px;
+        text-align: center;
+        color: #555;
+      }
+
+      .system-alerts-header {
+        margin-top: 40px;
+        margin-bottom: 10px;
+        font-size: 18px;
+        color: #333;
+        border-bottom: 1px solid #ddd;
+        padding-bottom: 5px;
+      }
+
+      .loader {
+        text-align: center;
+        padding: 20px;
+      }
+
+      .loader i {
+        animation: spin 1s linear infinite;
+      }
+
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Sidebar Menu -->
+    <div class="sidebar" id="sidebar">
+      <div class="sidebar-header">Menu</div>
+      <ul class="sidebar-menu">
+        <li>
+          <a href="/static/index.html"
+            ><i class="fas fa-chart-line"></i> Weather Statistics</a
+          >
+        </li>
+        <li>
+          <a href="/static/addlocations.html"
+            ><i class="fas fa-plus-circle"></i> Add Locations</a
+          >
+        </li>
+        <li>
+          <a href="/static/weathermap.html"
+            ><i class="fas fa-map"></i> Weather Map</a
+          >
+        </li>
+        <li>
+          <a href="/static/report.html"><i class="fas fa-flag"></i> Report</a>
+        </li>
+        <li id="loginMenuItem">
+          <a href="/static/login.html">
+            <i class="fas fa-sign-in-alt"></i> Log In
+          </a>
+        </li>
+        <li id="logoutMenuItem" style="display: none">
+          <a href="#" id="sidebarLogout">
+            <i class="fas fa-sign-out-alt"></i> Log Out
+          </a>
+        </li>
+      </ul>
+    </div>
+
+    <!-- Overlay for when sidebar is active -->
+    <div class="overlay" id="overlay"></div>
+
+    <!-- Header with Navigation -->
+    <header>
+      <div class="logo-container">
+        <div class="hamburger-menu" id="hamburger-menu">
+          <i class="fas fa-bars"></i>
+        </div>
+        <div class="logo"><i class="fas fa-cloud"></i> Cloudwatch </div>
+      </div>
+      
+      <!-- User info in header -->
+      <div class="user-info" id="userInfo" style="display: none">
+        <span>Welcome, <strong id="userName">User</strong></span>
+        <button id="logoutBtn" class="logout-btn">Logout</button>
+      </div>
+    </header>
+
+    <div class="container">
+      <h1>Weather Alerts</h1>
+
+      <!-- Weather Alerts Section -->
+      <div id="weather-alerts">
+        <div class="loader">
+          <i class="fas fa-spinner"></i> Loading alerts...
+        </div>
+        <!-- Weather alerts will be dynamically inserted here -->
+      </div>
+
+    <!-- First, load Font Awesome properly -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/js/all.min.js"></script>
+
+    <!-- Then add your custom JavaScript -->
+    <script>
+      document.addEventListener("DOMContentLoaded", function () {
+        const hamburgerMenu = document.getElementById("hamburger-menu");
+        const sidebar = document.getElementById("sidebar");
+        const overlay = document.getElementById("overlay");
+        const weatherAlertsContainer = document.getElementById("weather-alerts");
+        let authToken = null;
+
+        // First, check authentication
+        checkAuth();
+
+        // Toggle sidebar when hamburger menu is clicked
+        hamburgerMenu.addEventListener("click", function () {
+          sidebar.classList.toggle("active");
+          overlay.classList.toggle("active");
+        });
+
+        // Close sidebar when clicking on overlay
+        overlay.addEventListener("click", function () {
+          sidebar.classList.remove("active");
+          overlay.classList.remove("active");
+        });
+
+        // Function to check authentication
+        async function checkAuth() {
+          console.log("Checking authentication...");
+          authToken = localStorage.getItem("access_token");
+
+          if (!authToken) {
+            console.log("No token found in localStorage");
+            document.getElementById("userInfo").style.display = "none"; // Hide user info
+            document.getElementById("loginMenuItem").style.display = "block"; // Show login option
+            document.getElementById("logoutMenuItem").style.display = "none"; // Hide logout option
+            return false;
+          }
+
+          try {
+            // Verify the token by fetching the user profile
+            console.log("Verifying token...");
+            const response = await fetch("/api/me", {
+              headers: {
+                Authorization: `Bearer ${authToken}`,
+              },
+            });
+
+            if (!response.ok) {
+              console.log("Token verification failed", {
+                status: response.status,
+              });
+              throw new Error("Token invalid or expired");
+            }
+
+            // Token is valid, get user info
+            const currentUser = await response.json();
+            console.log("Authentication successful", { user: currentUser });
+
+            // Update UI with user info
+            document.getElementById("userName").textContent = currentUser.name;
+            document.getElementById("userInfo").style.display = "flex"; // Show user info
+            document.getElementById("loginMenuItem").style.display = "none"; // Hide login option
+            document.getElementById("logoutMenuItem").style.display = "block"; // Show logout option
+
+            return true;
+          } catch (error) {
+            console.log("Authentication error", { error: error.message });
+            // Clear invalid token
+            localStorage.removeItem("access_token");
+            document.getElementById("userInfo").style.display = "none"; // Hide user info
+            document.getElementById("loginMenuItem").style.display = "block"; // Show login option
+            document.getElementById("logoutMenuItem").style.display = "none"; // Hide logout option
+
+            return false;
+          }
+        }
+
+        // Logout function
+        function logout() {
+          console.log("Logging out");
+          localStorage.removeItem("access_token");
+          window.location.href = "/static/login.html";
+        }
+
+        // Add logout button event listeners
+        document.getElementById("logoutBtn")?.addEventListener("click", logout);
+        document.getElementById("sidebarLogout")?.addEventListener("click", logout);
+
+        // Function to get token from localStorage
+        function getToken() {
+          return localStorage.getItem("access_token");
+        }
+
+        // Function to fetch weather alerts
+        async function fetchWeatherAlerts() {
+          try {
+            const token = getToken();
+            const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+            const response = await fetch("/api/weather-alerts", {
+              method: "GET",
+              headers: headers,
+            });
+
+            if (response.status === 401) {
+              weatherAlertsContainer.innerHTML = `
+                <div class="no-alerts">
+                  <i class="fas fa-lock"></i> Please log in to view your personalized weather alerts.
+                </div>
+              `;
+              return;
+            }
+
+            const data = await response.json();
+
+            if (data.error) {
+              weatherAlertsContainer.innerHTML = `
+                <div class="no-alerts">
+                  <i class="fas fa-exclamation-circle"></i> ${data.error}
+                </div>
+              `;
+              return;
+            }
+
+            displayWeatherAlerts(data.alerts);
+          } catch (error) {
+            console.error("Error fetching weather alerts:", error);
+            weatherAlertsContainer.innerHTML = `
+              <div class="no-alerts">
+                <i class="fas fa-exclamation-circle"></i> Error loading weather alerts. Please try again later.
+              </div>
+            `;
+          }
+        }
+
+        // Function to display weather alerts
+        function displayWeatherAlerts(alerts) {
+          if (!alerts || alerts.length === 0) {
+            weatherAlertsContainer.innerHTML = `
+              <div class="no-alerts">
+                <i class="fas fa-check-circle"></i> No weather alerts at this time.
+              </div>
+            `;
+            return;
+          }
+
+          let alertsByLocation = {};
+
+          // Group alerts by location
+          alerts.forEach((alert) => {
+            if (!alertsByLocation[alert.location_name]) {
+              alertsByLocation[alert.location_name] = [];
+            }
+            alertsByLocation[alert.location_name].push(alert);
+          });
+
+          let alertsHTML = "";
+
+          // Generate HTML for each location
+          for (const location in alertsByLocation) {
+            alertsHTML += `<div class="location-header">${location}</div>`;
+
+            // Generate alerts for this location
+            alertsByLocation[location].forEach((alert) => {
+              let alertClass = "";
+              let icon = "";
+
+              switch (alert.severity) {
+                case "severe":
+                  alertClass = "severe-alert";
+                  icon = "exclamation-triangle";
+                  break;
+                case "moderate":
+                  alertClass = "moderate-alert";
+                  icon = "exclamation-circle";
+                  break;
+                case "normal":
+                  alertClass = "normal-alert";
+                  icon = "info-circle";
+                  break;
+                default:
+                  alertClass = "info-alert";
+                  icon = "cloud";
+              }
+
+              alertsHTML += `
+                <div class="alert ${alertClass}">
+                  <i class="fas fa-${icon}"></i>
+                  <div>
+                    <strong>${alert.title}:</strong> ${alert.message}
+                  </div>
+                </div>
+              `;
+            });
+          }
+
+          weatherAlertsContainer.innerHTML = alertsHTML;
+        }
+
+        // Fetch alerts when page loads
+        fetchWeatherAlerts();
+
+        // Refresh alerts every 5 minutes
+        setInterval(fetchWeatherAlerts, 300000);
+      });
+    </script>
+  </body>
+</html>

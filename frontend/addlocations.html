@@ -1,0 +1,1026 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Add Locations - WeatherWise</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        font-family: Arial, sans-serif;
+      }
+
+      body {
+        background-color: #1e1e1e;
+        color: white;
+      }
+
+      .container {
+        width: 100%;
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+
+      /* Header Styles */
+      header {
+        background-color: #212121;
+        padding: 15px 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .logo-container {
+        display: flex;
+        align-items: center;
+      }
+
+      .hamburger-menu {
+        margin-right: 15px;
+        cursor: pointer;
+        font-size: 1.5rem;
+        z-index: 1000;
+      }
+
+      .logo {
+        display: flex;
+        align-items: center;
+        font-size: 1.5rem;
+        font-weight: bold;
+      }
+
+      /* User display in header */
+      .user-info {
+        display: flex;
+        align-items: center;
+        margin-left: auto;
+        font-size: 14px;
+        color: #ddd;
+      }
+
+      .user-info span {
+        margin-right: 10px;
+      }
+
+      .logout-btn {
+        background: transparent;
+        color: #ff4444;
+        border: 1px solid #ff4444;
+        padding: 5px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.3s;
+      }
+
+      .logout-btn:hover {
+        background: #ff4444;
+        color: white;
+      }
+
+      /* Sidebar Navigation */
+      .sidebar {
+        position: fixed;
+        top: 0;
+        left: -250px;
+        width: 250px;
+        height: 100%;
+        background-color: #181818;
+        transition: left 0.3s ease;
+        z-index: 10000;
+        box-shadow: 2px 0 5px rgba(0, 0, 0, 0.5);
+      }
+
+      .sidebar.active {
+        left: 0;
+      }
+
+      .sidebar-header {
+        padding: 20px;
+        background-color: #121212;
+        text-align: center;
+        font-size: 1.2rem;
+        font-weight: bold;
+      }
+
+      .sidebar-menu {
+        list-style: none;
+        padding: 10px 0;
+      }
+
+      .sidebar-menu li {
+        padding: 15px 20px;
+        border-bottom: 1px solid #333;
+        transition: background-color 0.3s;
+      }
+
+      .sidebar-menu li:hover {
+        background-color: #2a2a2a;
+      }
+
+      .sidebar-menu a {
+        color: #ddd;
+        text-decoration: none;
+        display: block;
+      }
+
+      .sidebar-menu i {
+        margin-right: 10px;
+        width: 20px;
+        text-align: center;
+      }
+
+      /* Overlay when sidebar is active */
+      .overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        z-index: 998;
+        display: none;
+      }
+
+      .overlay.active {
+        display: block;
+      }
+
+      /* Auth check message */
+      .auth-warning {
+        background-color: #ff4444;
+        color: white;
+        padding: 15px;
+        margin-bottom: 20px;
+        border-radius: 6px;
+        display: none;
+      }
+
+      .auth-warning a {
+        color: white;
+        text-decoration: underline;
+        font-weight: bold;
+      }
+
+      .search-container {
+        position: relative;
+        margin-bottom: 15px;
+      }
+
+      #citySearch {
+        width: 100%;
+        padding: 12px 20px;
+        background: #333;
+        border: 1px solid #444;
+        color: white;
+        border-radius: 4px;
+        font-size: 16px;
+      }
+
+      #suggestions {
+        position: absolute;
+        width: 100%;
+        background: #2d2d2d;
+        border-radius: 4px;
+        margin-top: 5px;
+        max-height: 200px;
+        overflow-y: auto;
+        z-index: 1000;
+        display: none;
+      }
+
+      .suggestion-item {
+        padding: 10px 15px;
+        cursor: pointer;
+        transition: background-color 0.2s;
+      }
+
+      .suggestion-item:hover {
+        background-color: #3a3e4a;
+      }
+
+      .add-location-btn {
+        background-color: #ffe600;
+        color: black;
+        border: none;
+        padding: 12px 20px;
+        border-radius: 4px;
+        font-size: 16px;
+        cursor: pointer;
+        transition: background-color 0.3s;
+        width: 100%;
+        margin-top: 10px;
+      }
+
+      .add-location-btn:hover {
+        background-color: #e6cf00;
+      }
+
+      .add-location-btn:disabled {
+        background-color: #777;
+        cursor: not-allowed;
+      }
+
+      /* Loading spinner */
+      .loading-spinner {
+        display: none;
+        text-align: center;
+        padding: 30px;
+      }
+
+      .spinner {
+        border: 4px solid rgba(255, 255, 255, 0.3);
+        border-radius: 50%;
+        border-top: 4px solid #ffe600;
+        width: 40px;
+        height: 40px;
+        animation: spin 1s linear infinite;
+        margin: 0 auto;
+      }
+
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+
+      .location-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 30px;
+        margin-top: 30px;
+      }
+
+      .location-box {
+        background-color: #2d2d2d;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+        transition: transform 0.3s, box-shadow 0.3s;
+      }
+
+      .location-box:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+      }
+
+      .location-content {
+        padding: 20px;
+      }
+
+      .location-title {
+        font-size: 20px;
+        margin-bottom: 10px;
+        color: white;
+      }
+
+      .weather-details {
+        background: #333;
+        padding: 15px;
+        border-radius: 6px;
+        margin-top: 10px;
+      }
+
+      .weather-details div {
+        padding: 5px 0;
+        border-bottom: 1px solid #444;
+      }
+
+      .weather-details div:last-child {
+        border-bottom: none;
+      }
+
+      .error-message {
+        background-color: #ff4444;
+        color: white;
+        padding: 15px;
+        border-radius: 6px;
+        margin-top: 15px;
+        display: none;
+      }
+
+      /* Debug panel */
+      .debug-panel {
+        margin-top: 20px;
+        padding: 15px;
+        background-color: #222;
+        border: 1px solid #444;
+        border-radius: 6px;
+        font-family: monospace;
+        display: none;
+      }
+
+      .debug-panel pre {
+        white-space: pre-wrap;
+        max-height: 300px;
+        overflow-y: auto;
+      }
+
+      .debug-toggle {
+        background-color: #333;
+        color: #ddd;
+        border: 1px solid #555;
+        padding: 5px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        margin-top: 20px;
+        font-size: 12px;
+      }
+
+      .debug-toggle:hover {
+        background-color: #444;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Auth Warning -->
+    <div class="auth-warning" id="authWarning">
+      You must be logged in to access this page.
+      <a href="/static/login.html">Login here</a>
+    </div>
+
+    <!-- Sidebar Menu -->
+    <div class="sidebar" id="sidebar">
+      <div class="sidebar-header">Menu</div>
+      <ul class="sidebar-menu">
+        <li>
+          <a href="/static/index.html"
+            ><i class="fas fa-plus-circle"></i> Weather Statistics</a
+          >
+        </li>
+        <li>
+          <a href="/static/alerts.html"><i class="fas fa-bell"></i> Alerts</a>
+        </li>
+        <li>
+          <a href="/static/weathermap.html"
+            ><i class="fas fa-map"></i> Weather Map</a
+          >
+        </li>
+        <li>
+          <a href="/static/report.html"><i class="fas fa-user"></i> Report </a>
+        </li>
+        <li id="loginMenuItem">
+          <a href="/static/login.html"
+            ><i class="fas fa-sign-in-alt"></i> Log In</a
+          >
+        </li>
+        <li id="logoutMenuItem" style="display: none">
+          <a href="#" id="sidebarLogout"
+            ><i class="fas fa-sign-out-alt"></i> Log Out</a
+          >
+        </li>
+      </ul>
+    </div>
+
+    <!-- Overlay for when sidebar is active -->
+    <div class="overlay" id="overlay"></div>
+
+    <header>
+      <div class="logo-container">
+        <div class="hamburger-menu" id="hamburger-menu">
+          <i class="fas fa-bars"></i>
+        </div>
+        <div class="logo"><i class="fas fa-cloud"></i> Cloudwatch</div>
+      </div>
+
+      <!-- User info in header -->
+      <div class="user-info" id="userInfo" style="display: none">
+        <span>Welcome, <strong id="userName">User</strong></span>
+        <button id="logoutBtn" class="logout-btn">Logout</button>
+      </div>
+    </header>
+
+    <!-- Main content (hidden until auth check passes) -->
+    <div id="mainContent" style="display: none">
+      <div class="container">
+        <h2 style="margin-bottom: 20px">Add New Location</h2>
+
+        <div class="search-container">
+          <input
+            type="text"
+            id="citySearch"
+            placeholder="Search for a city..."
+            autocomplete="off"
+          />
+          <div id="suggestions"></div>
+        </div>
+
+        <button id="addLocationBtn" class="add-location-btn" disabled>
+          Add This Location
+        </button>
+
+        <!-- Error Message Display -->
+        <div class="error-message" id="errorMessage"></div>
+
+        <!-- Loading Spinner -->
+        <div class="loading-spinner" id="loadingSpinner">
+          <div class="spinner"></div>
+          <p style="margin-top: 15px">Loading weather data...</p>
+        </div>
+
+        <!-- Debug toggle button -->
+        <button id="debugToggleBtn" class="debug-toggle">
+          Show Debug Panel
+        </button>
+
+        <!-- Debug Panel -->
+        <div id="debugPanel" class="debug-panel">
+          <h4>Debug Information:</h4>
+          <pre id="debugOutput">No debug information available yet.</pre>
+        </div>
+
+        <!-- Weather Display Section -->
+        <div id="weatherContainer" class="location-grid">
+          <!-- Weather cards will be inserted here -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Font Awesome for icons -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/js/all.min.js"></script>
+
+    <script>
+      const API_KEY = "fb23af25eda4f16a60eb16a48f7ca7e8"; // Replace with your API key
+      let searchTimeout;
+      let selectedLocation = null;
+      let authToken = null;
+      let weatherRefreshInterval = null;
+      let debugLog = [];
+
+      // Debug logging function
+      function debug(message, data = null) {
+        const timestamp = new Date().toLocaleTimeString();
+        const logEntry = {
+          timestamp,
+          message,
+          data,
+        };
+
+        debugLog.unshift(logEntry); // Add to beginning of array
+
+        // Keep only last 50 entries
+        if (debugLog.length > 50) {
+          debugLog.pop();
+        }
+
+        // Update debug panel if visible
+        if (document.getElementById("debugPanel").style.display === "block") {
+          updateDebugPanel();
+        }
+
+        // Also log to console
+        if (data) {
+          console.log(`${timestamp} - ${message}`, data);
+        } else {
+          console.log(`${timestamp} - ${message}`);
+        }
+      }
+
+      // Update debug panel content
+      function updateDebugPanel() {
+        const debugOutput = document.getElementById("debugOutput");
+        let content = "";
+
+        debugLog.forEach((entry) => {
+          content += `[${entry.timestamp}] ${entry.message}\n`;
+          if (entry.data) {
+            content += JSON.stringify(entry.data, null, 2) + "\n\n";
+          } else {
+            content += "\n";
+          }
+        });
+
+        debugOutput.textContent = content;
+      }
+
+      // Toggle debug panel visibility
+      document
+        .getElementById("debugToggleBtn")
+        .addEventListener("click", function () {
+          const debugPanel = document.getElementById("debugPanel");
+          if (debugPanel.style.display === "block") {
+            debugPanel.style.display = "none";
+            this.textContent = "Show Debug Panel";
+          } else {
+            debugPanel.style.display = "block";
+            this.textContent = "Hide Debug Panel";
+            updateDebugPanel();
+          }
+        });
+
+      // Authentication check
+      async function checkAuth() {
+        debug("Checking authentication...");
+        authToken = localStorage.getItem("access_token");
+
+        if (!authToken) {
+          debug("No token found in localStorage");
+          document.getElementById("authWarning").style.display = "block";
+          document.getElementById("mainContent").style.display = "none";
+          document.getElementById("userInfo").style.display = "none";
+          document.getElementById("loginMenuItem").style.display = "block";
+          document.getElementById("logoutMenuItem").style.display = "none";
+          return false;
+        }
+
+        try {
+          // Verify the token by fetching the user profile
+          debug("Verifying token...");
+          const response = await fetch("/api/me", {
+            headers: {
+              Authorization: `Bearer ${authToken}`,
+            },
+          });
+
+          if (!response.ok) {
+            debug("Token verification failed", { status: response.status });
+            throw new Error("Token invalid or expired");
+          }
+
+          // Token is valid, get user info
+          const currentUser = await response.json();
+          debug("Authentication successful", { user: currentUser });
+
+          // Update UI with user info
+          document.getElementById("userName").textContent = currentUser.name;
+          document.getElementById("authWarning").style.display = "none";
+          document.getElementById("mainContent").style.display = "block";
+          document.getElementById("userInfo").style.display = "flex";
+          document.getElementById("loginMenuItem").style.display = "none";
+          document.getElementById("logoutMenuItem").style.display = "block";
+
+          return true;
+        } catch (error) {
+          debug("Authentication error", { error: error.message });
+          // Clear invalid token
+          localStorage.removeItem("access_token");
+          document.getElementById("authWarning").style.display = "block";
+          document.getElementById("mainContent").style.display = "none";
+          document.getElementById("userInfo").style.display = "none";
+
+          return false;
+        }
+      }
+
+      // Logout function
+      function logout() {
+        debug("Logging out");
+        localStorage.removeItem("access_token");
+        clearInterval(weatherRefreshInterval); // Clear interval on logout
+        window.location.href = "/static/login.html";
+      }
+
+      // City search functionality
+      document
+        .getElementById("citySearch")
+        .addEventListener("input", function (e) {
+          clearTimeout(searchTimeout);
+          const query = e.target.value.trim();
+          debug("City search input", { query });
+          document.getElementById("addLocationBtn").disabled = true;
+
+          if (query.length < 3) {
+            document.getElementById("suggestions").style.display = "none";
+            return;
+          }
+
+          searchTimeout = setTimeout(async () => {
+            try {
+              debug("Fetching city suggestions", { query });
+              const response = await fetch(
+                `https://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(
+                  query
+                )}&limit=5&appid=${API_KEY}`
+              );
+
+              if (!response.ok) {
+                debug("City search API error", { status: response.status });
+                throw new Error("City search failed");
+              }
+
+              const data = await response.json();
+              debug("City suggestions received", { count: data.length });
+              showSuggestions(data);
+            } catch (error) {
+              debug("City search error", { error: error.message });
+              showError("Failed to search cities: " + error.message);
+            }
+          }, 300);
+        });
+
+      function showSuggestions(cities) {
+        const suggestions = document.getElementById("suggestions");
+        suggestions.innerHTML = "";
+
+        if (!cities.length) {
+          suggestions.style.display = "none";
+          debug("No city suggestions found");
+          return;
+        }
+
+        cities.forEach((city) => {
+          const div = document.createElement("div");
+          div.className = "suggestion-item";
+          div.innerHTML = `
+            ${city.name}, ${city.state ? city.state + ", " : ""}${city.country}
+          `;
+
+          div.addEventListener("click", () => {
+            document.getElementById("citySearch").value =
+              div.textContent.trim();
+
+            // Store selected location
+            selectedLocation = {
+              name: city.name,
+              latitude: city.lat,
+              longitude: city.lon,
+              country: city.country,
+              state: city.state,
+            };
+
+            debug("Location selected", selectedLocation);
+            document.getElementById("addLocationBtn").disabled = false;
+            suggestions.style.display = "none";
+          });
+
+          suggestions.appendChild(div);
+        });
+
+        suggestions.style.display = "block";
+      }
+
+      // Add location button click handler
+      document
+        .getElementById("addLocationBtn")
+        .addEventListener("click", async () => {
+          if (!selectedLocation) {
+            debug("Add location clicked but no location selected");
+            return;
+          }
+
+          try {
+            // Show loading spinner
+            document.getElementById("loadingSpinner").style.display = "block";
+            document.getElementById("errorMessage").style.display = "none";
+
+            debug("Adding location", selectedLocation);
+
+            // Add location to user's saved locations
+            const response = await fetch("/api/add-location", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${authToken}`,
+              },
+              body: JSON.stringify({
+                latitude: selectedLocation.latitude,
+                longitude: selectedLocation.longitude,
+                name: selectedLocation.state
+                  ? `${selectedLocation.name}, ${selectedLocation.state}, ${selectedLocation.country}`
+                  : `${selectedLocation.name}, ${selectedLocation.country}`,
+              }),
+            });
+
+            if (!response.ok) {
+              const errorData = await response.json();
+              debug("Add location API error", {
+                status: response.status,
+                error: errorData,
+              });
+              throw new Error(errorData.detail || "Failed to add location");
+            }
+
+            const responseData = await response.json();
+            debug("Location added successfully", responseData);
+
+            // Reset the search field and load updated weather
+            document.getElementById("citySearch").value = "";
+            document.getElementById("addLocationBtn").disabled = true;
+            selectedLocation = null;
+
+            // Hide spinner and reload weather
+            document.getElementById("loadingSpinner").style.display = "none";
+            loadUserWeather();
+
+            // Show success message
+            showSuccess("Location added successfully!");
+          } catch (error) {
+            debug("Add location error", { error: error.message });
+            document.getElementById("loadingSpinner").style.display = "none";
+            showError(
+              error.message || "Failed to add location. Please try again."
+            );
+          }
+        });
+
+      // Load User's Weather Data
+      async function loadUserWeather() {
+        try {
+          debug("Loading user weather data");
+          document.getElementById("loadingSpinner").style.display = "block";
+
+          const response = await fetch("/api/user-weather", {
+            headers: {
+              Authorization: `Bearer ${authToken}`,
+            },
+          });
+
+          if (!response.ok) {
+            debug("User weather API error", { status: response.status });
+            throw new Error("Failed to load weather data");
+          }
+
+          const data = await response.json();
+          debug("Weather data received", {
+            count: data.user_weather?.length || 0,
+            data: data.user_weather,
+          });
+
+          document.getElementById("loadingSpinner").style.display = "none";
+          renderWeather(data.user_weather || []);
+        } catch (error) {
+          debug("Error loading weather", { error: error.message });
+          document.getElementById("loadingSpinner").style.display = "none";
+          showError("Failed to load your weather data: " + error.message);
+        }
+      }
+
+      function renderWeather(weatherData) {
+        const container = document.getElementById("weatherContainer");
+        container.innerHTML = "";
+
+        if (weatherData.length === 0) {
+          debug("No weather data to display");
+          container.innerHTML = `
+            <div style="grid-column: span 3; background: #333; padding: 20px; border-radius: 6px; text-align: center;">
+                <p>You haven't added any locations yet.</p>
+                <p style="margin-top: 10px;">Use the search box above to add your first location.</p>
+            </div>
+          `;
+          return;
+        }
+
+        debug(`Rendering ${weatherData.length} weather locations`);
+        weatherData.forEach((item, index) => {
+          const weather = item.weather;
+          const location = item.location;
+
+          const weatherCard = document.createElement("div");
+          weatherCard.className = "location-box";
+          weatherCard.innerHTML = `
+            <div class="location-content">
+                <h3 class="location-title">${
+                  location.name || "Custom Location"
+                }</h3>
+                <div class="weather-details">
+                    ${
+                      weather
+                        ? `
+                            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
+                                <div><strong>Temperature:</strong> ${weather.temperature}°C</div>
+                                <div><strong>Feels Like:</strong> ${weather.feels_like}°C</div>
+                                <div><strong>Condition:</strong> ${weather.condition}</div>
+                                <div><strong>Humidity:</strong> ${weather.humidity}%</div>
+                                <div><strong>Wind Speed:</strong> ${weather.wind_speed} m/s</div>
+                                <div><strong>Pressure:</strong> ${weather.pressure} hPa</div>
+                            </div>
+                            <div style="margin-top: 15px; display: flex; justify-content: space-between;">
+                                <button class="refresh-btn" data-location-id="${location.id}"
+                                        style="padding: 8px 15px; background: #3a3e4a; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                                    <i class="fas fa-sync-alt"></i> Refresh
+                                </button>
+                                <button class="delete-btn" data-location-id="${location.id}"
+                                        style="padding: 8px 15px; background: #ff4444; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                                    <i class="fas fa-trash"></i> Delete
+                                </button>
+                            </div>
+                        `
+                        : `
+                            <div style="text-align: center; padding: 15px;">
+                                <p>Weather data not available.</p>
+                                <button class="refresh-btn" data-location-id="${location.id}"
+                                        style="padding: 8px 15px; margin-top: 10px; background: #3a3e4a; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                                    <i class="fas fa-sync-alt"></i> Try Again
+                                </button>
+                            </div>
+                        `
+                    }
+                </div>
+            </div>
+          `;
+
+          container.appendChild(weatherCard);
+        });
+
+        // Add event listeners to refresh buttons
+        document.querySelectorAll(".refresh-btn").forEach((button) => {
+          button.addEventListener("click", async (e) => {
+            const locationId = e.currentTarget.getAttribute("data-location-id");
+            debug("Refresh weather clicked", { locationId });
+            try {
+              const refreshBtn = e.currentTarget;
+              refreshBtn.innerHTML =
+                '<i class="fas fa-spinner fa-spin"></i> Refreshing...';
+              refreshBtn.disabled = true;
+
+              const response = await fetch(
+                `/api/refresh-weather/${locationId}`,
+                {
+                  method: "POST",
+                  headers: {
+                    Authorization: `Bearer ${authToken}`,
+                  },
+                }
+              );
+
+              if (!response.ok) {
+                debug("Refresh weather API error", {
+                  locationId,
+                  status: response.status,
+                });
+                throw new Error("Failed to refresh weather data");
+              }
+
+              debug("Weather refreshed successfully", { locationId });
+              refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Refresh';
+              refreshBtn.disabled = false;
+
+              // Reload the weather data
+              loadUserWeather();
+            } catch (error) {
+              debug("Refresh weather error", {
+                locationId,
+                error: error.message,
+              });
+              showError("Failed to refresh: " + error.message);
+              e.currentTarget.innerHTML =
+                '<i class="fas fa-sync-alt"></i> Refresh';
+              e.currentTarget.disabled = false;
+            }
+          });
+        });
+
+        // Add event listeners to delete buttons
+        document.querySelectorAll(".delete-btn").forEach((button) => {
+          button.addEventListener("click", async (e) => {
+            const locationId = e.currentTarget.getAttribute("data-location-id");
+            debug("Delete location clicked", { locationId });
+            if (!confirm("Are you sure you want to delete this location?")) {
+              return;
+            }
+
+            try {
+              const deleteBtn = e.currentTarget;
+              deleteBtn.innerHTML =
+                '<i class="fas fa-spinner fa-spin"></i> Deleting...';
+              deleteBtn.disabled = true;
+
+              const response = await fetch(
+                `/api/delete-location/${locationId}`,
+                {
+                  method: "DELETE",
+                  headers: {
+                    Authorization: `Bearer ${authToken}`,
+                  },
+                }
+              );
+
+              if (!response.ok) {
+                debug("Delete location API error", {
+                  locationId,
+                  status: response.status,
+                });
+                throw new Error("Failed to delete location");
+              }
+
+              debug("Location deleted successfully", { locationId });
+
+              // Reload the weather data
+              loadUserWeather();
+            } catch (error) {
+              debug("Delete location error", {
+                locationId,
+                error: error.message,
+              });
+              showError("Failed to delete: " + error.message);
+              e.currentTarget.innerHTML = '<i class="fas fa-trash"></i> Delete';
+              e.currentTarget.disabled = false;
+            }
+          });
+        });
+      }
+
+      function showError(message) {
+        debug("Error message shown", { message });
+        const errorElement = document.getElementById("errorMessage");
+        errorElement.textContent = message;
+        errorElement.style.display = "block";
+        errorElement.style.backgroundColor = "#ff4444";
+
+        // Hide after 5 seconds
+        setTimeout(() => {
+          errorElement.style.display = "none";
+        }, 5000);
+      }
+
+      function showSuccess(message) {
+        debug("Success message shown", { message });
+        const errorElement = document.getElementById("errorMessage");
+        errorElement.textContent = message;
+        errorElement.style.display = "block";
+        errorElement.style.backgroundColor = "#4CAF50";
+
+        // Hide after 3 seconds
+        setTimeout(() => {
+          errorElement.style.display = "none";
+        }, 3000);
+      }
+
+      // Sidebar toggle functionality
+      const hamburgerMenu = document.getElementById("hamburger-menu");
+      const sidebar = document.getElementById("sidebar");
+      const overlay = document.getElementById("overlay");
+
+      hamburgerMenu.addEventListener("click", () => {
+        sidebar.classList.toggle("active");
+        overlay.classList.toggle("active");
+      });
+
+      overlay.addEventListener("click", () => {
+        sidebar.classList.remove("active");
+        overlay.classList.remove("active");
+      });
+
+      // Logout button event listeners
+      document.getElementById("logoutBtn").addEventListener("click", logout);
+      document
+        .getElementById("sidebarLogout")
+        .addEventListener("click", logout);
+
+      // Close suggestions when clicking outside
+      document.addEventListener("click", (e) => {
+        if (!e.target.closest(".search-container")) {
+          document.getElementById("suggestions").style.display = "none";
+        }
+      });
+
+      // Setup automatic weather refresh
+      function setupWeatherPolling() {
+        debug("Setting up weather polling (every 5 seconds)");
+        // Clear any existing interval first
+        if (weatherRefreshInterval) {
+          clearInterval(weatherRefreshInterval);
+        }
+
+        // Set new interval for polling
+        weatherRefreshInterval = setInterval(() => {
+          debug("Auto-refreshing weather data");
+          loadUserWeather();
+        }, 5000); // Poll every 5 seconds
+      }
+
+      // Initial auth check and application setup
+      document.addEventListener("DOMContentLoaded", async () => {
+        debug("DOM loaded, starting application");
+        const isAuthenticated = await checkAuth();
+
+        if (isAuthenticated) {
+          debug("User authenticated, loading weather data");
+          // Load user's weather data
+          await loadUserWeather();
+
+          // Setup automatic refresh
+          setupWeatherPolling();
+        } else {
+          debug("User not authenticated");
+        }
+      });
+
+      // Handle visibility changes to pause/resume polling when tab is inactive
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "hidden") {
+          // Clear polling when tab is not visible
+          debug("Tab hidden, pausing weather polling");
+          if (weatherRefreshInterval) {
+            clearInterval(weatherRefreshInterval);
+            weatherRefreshInterval = null;
+          }
+        } else if (document.visibilityState === "visible" && authToken) {
+          // Resume polling when tab becomes visible again
+          debug("Tab visible, resuming weather polling");
+          setupWeatherPolling();
+          // Immediately refresh weather data
+          loadUserWeather();
+        }
+      });
+
+      // Initial debug message
+      debug("Script initialized");
+    </script>
+  </body>
+</html>

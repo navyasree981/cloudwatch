@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WeatherWise - Interactive Global Weather Map</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        font-family: Arial, sans-serif;
+      }
+
+      body {
+        background-color: #1e1e1e;
+        color: white;
+      }
+
+      /* Header Styles */
+      header {
+        background-color: #212121;
+        padding: 15px 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid #333;
+      }
+
+      .logo-container {
+        display: flex;
+        align-items: center;
+      }
+
+      .hamburger-menu {
+        margin-right: 15px;
+        cursor: pointer;
+        font-size: 1.5rem;
+        z-index: 1000;
+      }
+
+      .logo {
+        display: flex;
+        align-items: center;
+        font-size: 1.5rem;
+        font-weight: bold;
+      }
+
+      /* Sidebar Navigation */
+      .sidebar {
+        position: fixed;
+        top: 0;
+        left: -250px;
+        width: 250px;
+        height: 100%;
+        background-color: #181818;
+        transition: left 0.3s ease;
+        z-index: 10000;
+        box-shadow: 2px 0 5px rgba(0, 0, 0, 0.5);
+      }
+
+      .sidebar.active {
+        left: 0;
+      }
+
+      .sidebar-header {
+        padding: 20px;
+        background-color: #121212;
+        text-align: center;
+        font-size: 1.2rem;
+        font-weight: bold;
+      }
+
+      .sidebar-menu {
+        list-style: none;
+        padding: 10px 0;
+      }
+
+      .sidebar-menu li {
+        padding: 15px 20px;
+        border-bottom: 1px solid #333;
+        transition: background-color 0.3s;
+      }
+
+      .sidebar-menu li:hover {
+        background-color: #2a2a2a;
+      }
+
+      .sidebar-menu a {
+        color: #ddd;
+        text-decoration: none;
+        display: block;
+      }
+
+      .sidebar-menu i {
+        margin-right: 10px;
+        width: 20px;
+        text-align: center;
+      }
+
+      /* Overlay when sidebar is active */
+      .overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        z-index: 998;
+        display: none;
+      }
+
+      .overlay.active {
+        display: block;
+      }
+
+      nav ul {
+        display: flex;
+        list-style: none;
+      }
+
+      nav ul li {
+        margin-left: 20px;
+      }
+
+      nav ul li a {
+        color: white;
+        text-decoration: none;
+      }
+
+      .logo {
+        display: flex;
+        align-items: center;
+        font-size: 1.5rem;
+        font-weight: bold;
+      }
+
+      .logo i {
+        margin-right: 10px;
+        color: white;
+      }
+
+      nav ul {
+        display: flex;
+        list-style: none;
+      }
+
+      nav ul li {
+        margin-left: 20px;
+      }
+
+      nav ul li a {
+        color: #ffc107;
+        text-decoration: none;
+        font-size: 1rem;
+      }
+
+      /* Main Content */
+      .main-content {
+        display: grid;
+        grid-template-columns: 2fr 1fr;
+        gap: 20px;
+        padding: 20px;
+      }
+
+      /* Weather Map Section */
+      .map-section {
+        background-color: #252525;
+        border-radius: 10px;
+        overflow: hidden;
+        padding: 15px;
+      }
+
+      .section-header {
+        padding: 10px 0;
+        font-size: 1.5rem;
+        color: white;
+      }
+
+      #map {
+        width: 100%;
+        height: 500px;
+        border-radius: 8px;
+      }
+
+      .map-controls {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 15px;
+      }
+
+      .map-control-btn {
+        padding: 8px 12px;
+        background-color: #333;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: background-color 0.3s;
+      }
+
+      .map-control-btn:hover {
+        background-color: #444;
+      }
+
+      .map-control-btn.active {
+        background-color: #4caf50;
+      }
+
+      /* Weather Insights Section */
+      .insights-section {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+      }
+
+      .weather-card {
+        background-color: #252525;
+        border-radius: 10px;
+        padding: 20px;
+      }
+
+      .card-header {
+        font-size: 1.3rem;
+        margin-bottom: 15px;
+        color: white;
+      }
+
+      .weather-info-item {
+        margin-bottom: 10px;
+        line-height: 1.5;
+      }
+
+      /* Weekly Forecast */
+      .forecast-day {
+        display: flex;
+        justify-content: space-between;
+        padding: 8px 0;
+        border-bottom: 1px solid #333;
+      }
+
+      .forecast-day:last-child {
+        border-bottom: none;
+      }
+
+      /* Top Cities Section */
+      .cities-section {
+        background-color: #252525;
+        border-radius: 10px;
+        padding: 20px;
+        grid-column: span 2;
+      }
+
+      .city-item {
+        display: flex;
+        justify-content: space-between;
+        padding: 12px 0;
+        border-bottom: 1px solid #333;
+      }
+
+      .city-item:last-child {
+        border-bottom: none;
+      }
+
+      .city-name {
+        font-weight: bold;
+      }
+
+      .city-weather {
+        color: #ccc;
+      }
+
+      /* Legend */
+      .map-legend {
+        background-color: rgba(0, 0, 0, 0.7);
+        padding: 10px;
+        border-radius: 5px;
+        color: white;
+        margin-top: 10px;
+      }
+
+      .legend-item {
+        display: flex;
+        align-items: center;
+        margin-bottom: 5px;
+      }
+
+      .legend-color {
+        width: 20px;
+        height: 20px;
+        margin-right: 10px;
+        border-radius: 3px;
+      }
+
+      /* Footer */
+      footer {
+        background-color: #212121;
+        padding: 15px 20px;
+        text-align: center;
+        border-top: 1px solid #333;
+      }
+
+      .footer-links {
+        margin-bottom: 15px;
+      }
+
+      .footer-links a {
+        color: white;
+        text-decoration: none;
+        margin: 0 15px;
+        font-size: 0.9rem;
+      }
+
+      .footer-links a:hover {
+        text-decoration: underline;
+      }
+
+      .social-links {
+        display: flex;
+        justify-content: center;
+        gap: 20px;
+        margin-top: 10px;
+      }
+
+      .social-links a {
+        color: white;
+        font-size: 1.2rem;
+      }
+
+      /* Responsive Design */
+      @media (max-width: 768px) {
+        .main-content {
+          grid-template-columns: 1fr;
+        }
+
+        .cities-section {
+          grid-column: span 1;
+        }
+
+        nav ul li {
+          margin-left: 10px;
+        }
+
+        nav ul li a {
+          font-size: 0.9rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Sidebar Menu -->
+    <div class="sidebar" id="sidebar">
+      <div class="sidebar-header">Menu</div>
+      <ul class="sidebar-menu">
+        <li>
+          <a href="/static/index.html"
+            ><i class="fas fa-map"></i> Weather Statistics</a
+          >
+        </li>
+        <li>
+          <a href="/static/addlocations.html"
+            ><i class="fas fa-plus-circle"></i> Add Locations</a
+          >
+        </li>
+        <li>
+          <a href="/static/alerts.html"
+            ><i class="fas fa-bell"></i> Alerts</a
+          >
+        </li>
+        <li>
+          <a href="/static/report.html"><i class="fas fa-user"></i> Report </a>
+        </li>
+      </ul>
+    </div>
+
+    <!-- Overlay for when sidebar is active -->
+    <div class="overlay" id="overlay"></div>
+
+    <!-- Header with Navigation -->
+    <header>
+      <div class="logo-container">
+        <div class="hamburger-menu" id="hamburger-menu">
+          <i class="fas fa-bars"></i>
+        </div>
+        <div class="logo"><i class="fas fa-cloud"></i> Cloud Watch</div>
+      </div>
+    </header>
+
+    <div class="main-content">
+      <!-- Weather Map Section -->
+      <section class="map-section">
+        <h2 class="section-header">Global Weather Map</h2>
+        <div class="map-controls">
+          <button class="map-control-btn active" data-layer="temp">
+            Temperature
+          </button>
+          <button class="map-control-btn" data-layer="clouds">Clouds</button>
+          <button class="map-control-btn" data-layer="precipitation">
+            Precipitation
+          </button>
+          <button class="map-control-btn" data-layer="wind">Wind Speed</button>
+          <button class="map-control-btn" data-layer="pressure">
+            Pressure
+          </button>
+        </div>
+        <div id="map"></div>
+        <div class="map-legend">
+          <h3>Legend</h3>
+          <div id="layer-legend"></div>
+        </div>
+      </section>
+
+    <footer>
+      <div class="footer-links">
+        <a href="#">Contact Us</a>
+        <a href="#">Privacy Policy</a>
+        <a href="#">Terms of Service</a>
+      </div>
+      <div class="social-links">
+        <a href="#"><i class="fab fa-facebook-f"></i></a>
+        <a href="#"><i class="fab fa-twitter"></i></a>
+        <a href="#"><i class="fab fa-instagram"></i></a>
+      </div>
+    </footer>
+
+    <!-- Font Awesome for icons -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/js/all.min.js"></script>
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <script>
+      // Sidebar toggle functionality
+      const sidebar = document.getElementById("sidebar");
+      const overlay = document.getElementById("overlay");
+      const hamburger = document.getElementById("hamburger-menu");
+
+      hamburger.addEventListener("click", () => {
+        sidebar.classList.toggle("active");
+        overlay.classList.toggle("active");
+      });
+
+      overlay.addEventListener("click", () => {
+        sidebar.classList.remove("active");
+        overlay.classList.remove("active");
+      });
+
+      // Initialize map centered on the world
+      const map = L.map("map").setView([30, 0], 2);
+
+      // Base layers
+      const baseLayer = L.tileLayer(
+        "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        {
+          attribution:
+            '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+          maxZoom: 18,
+        }
+      ).addTo(map);
+
+      // OpenWeatherMap API key
+      const apiKey = "fb23af25eda4f16a60eb16a48f7ca7e8";
+
+      // Weather layers
+      const weatherLayers = {
+        temp: L.tileLayer(
+          `https://tile.openweathermap.org/map/temp_new/{z}/{x}/{y}.png?appid=${apiKey}`,
+          {
+            attribution: "Weather data © OpenWeatherMap",
+            maxZoom: 18,
+          }
+        ),
+        clouds: L.tileLayer(
+          `https://tile.openweathermap.org/map/clouds_new/{z}/{x}/{y}.png?appid=${apiKey}`,
+          {
+            attribution: "Weather data © OpenWeatherMap",
+            maxZoom: 18,
+          }
+        ),
+        precipitation: L.tileLayer(
+          `https://tile.openweathermap.org/map/precipitation_new/{z}/{x}/{y}.png?appid=${apiKey}`,
+          {
+            attribution: "Weather data © OpenWeatherMap",
+            maxZoom: 18,
+          }
+        ),
+        wind: L.tileLayer(
+          `https://tile.openweathermap.org/map/wind_new/{z}/{x}/{y}.png?appid=${apiKey}`,
+          {
+            attribution: "Weather data © OpenWeatherMap",
+            maxZoom: 18,
+          }
+        ),
+        pressure: L.tileLayer(
+          `https://tile.openweathermap.org/map/pressure_new/{z}/{x}/{y}.png?appid=${apiKey}`,
+          {
+            attribution: "Weather data © OpenWeatherMap",
+            maxZoom: 18,
+          }
+        ),
+      };
+
+      // Add temperature layer by default
+      weatherLayers.temp.addTo(map);
+
+      // Layer legend configurations
+      const legendConfigs = {
+        temp: [
+          { color: "#053061", label: "Very Cold (-20°C)" },
+          { color: "#2166ac", label: "Cold (-10°C)" },
+          { color: "#4393c3", label: "Cool (0°C)" },
+          { color: "#92c5de", label: "Mild (10°C)" },
+          { color: "#d1e5f0", label: "Warm (20°C)" },
+          { color: "#fddbc7", label: "Hot (30°C)" },
+          { color: "#f4a582", label: "Very Hot (40°C)" },
+          { color: "#d6604d", label: "Extreme Heat (>40°C)" },
+        ],
+        clouds: [
+          { color: "rgba(255, 255, 255, 0.1)", label: "Clear (0-10%)" },
+          {
+            color: "rgba(230, 230, 230, 0.5)",
+            label: "Partly Cloudy (10-50%)",
+          },
+          {
+            color: "rgba(200, 200, 200, 0.7)",
+            label: "Mostly Cloudy (50-90%)",
+          },
+          { color: "rgba(180, 180, 180, 0.9)", label: "Overcast (90-100%)" },
+        ],
+        precipitation: [
+          { color: "rgba(200, 250, 255, 0.1)", label: "None (0 mm)" },
+          { color: "rgba(95, 189, 212, 0.5)", label: "Light (0.1-2.5 mm)" },
+          { color: "rgba(36, 131, 213, 0.7)", label: "Moderate (2.5-10 mm)" },
+          { color: "rgba(8, 48, 107, 0.9)", label: "Heavy (>10 mm)" },
+        ],
+        wind: [
+          { color: "rgba(255, 255, 255, 0.1)", label: "Calm (0-5 km/h)" },
+          { color: "rgba(200, 250, 255, 0.5)", label: "Light (5-20 km/h)" },
+          { color: "rgba(95, 189, 212, 0.7)", label: "Moderate (20-40 km/h)" },
+          { color: "rgba(36, 131, 213, 0.9)", label: "Strong (>40 km/h)" },
+        ],
+        pressure: [
+          { color: "#053061", label: "Low (<990 hPa)" },
+          { color: "#2166ac", label: "Below Normal (990-1010 hPa)" },
+          { color: "#92c5de", label: "Normal (1010-1020 hPa)" },
+          { color: "#f4a582", label: "Above Normal (1020-1030 hPa)" },
+          { color: "#b2182b", label: "High (>1030 hPa)" },
+        ],
+      };
+
+      // Function to update legend
+      function updateLegend(layerType) {
+        const legendContainer = document.getElementById("layer-legend");
+        legendContainer.innerHTML = "";
+
+        legendConfigs[layerType].forEach((item) => {
+          const legendItem = document.createElement("div");
+          legendItem.className = "legend-item";
+
+          const colorBox = document.createElement("div");
+          colorBox.className = "legend-color";
+          colorBox.style.backgroundColor = item.color;
+
+          const label = document.createElement("span");
+          label.textContent = item.label;
+
+          legendItem.appendChild(colorBox);
+          legendItem.appendChild(label);
+          legendContainer.appendChild(legendItem);
+        });
+      }
+
+      // Initial legend
+      updateLegend("temp");
+
+      // Layer control buttons
+      const layerButtons = document.querySelectorAll(".map-control-btn");
+      layerButtons.forEach((button) => {
+        button.addEventListener("click", function () {
+          const layerType = this.getAttribute("data-layer");
+
+          // Remove all weather layers
+          Object.values(weatherLayers).forEach((layer) => {
+            map.removeLayer(layer);
+          });
+
+          // Add selected layer
+          weatherLayers[layerType].addTo(map);
+
+          // Update button states
+          layerButtons.forEach((btn) => btn.classList.remove("active"));
+          this.classList.add("active");
+
+          // Update legend
+          updateLegend(layerType);
+        });
+      });
+
+      // Add click event to map for weather data at clicked location
+      map.on("click", async function (e) {
+        const lat = e.latlng.lat;
+        const lng = e.latlng.lng;
+
+        try {
+          // Fetch weather data for the clicked location
+          const response = await fetch(
+            `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lng}&appid=${apiKey}&units=imperial`
+          );
+          const data = await response.json();
+
+          // Update the weather insights panel
+          document.getElementById("current-temp").textContent = `${Math.round(
+            data.main.temp
+          )}°F`;
+          document.getElementById(
+            "current-humidity"
+          ).textContent = `${data.main.humidity}%`;
+          document.getElementById("current-wind").textContent = `${Math.round(
+            data.wind.speed
+          )} mph`;
+          document.getElementById("current-forecast").textContent =
+            data.weather[0].description;
+
+          // Add a marker with popup for the clicked location
+          L.marker([lat, lng])
+            .addTo(map)
+            .bindPopup(
+              `
+              <b>${data.name || "Location"}</b><br>
+              Temperature: ${Math.round(data.main.temp)}°F<br>
+              Weather: ${data.weather[0].description}<br>
+              Humidity: ${data.main.humidity}%<br>
+              Wind: ${Math.round(data.wind.speed)} mph
+            `
+            )
+            .openPopup();
+        } catch (error) {
+          console.error("Error fetching weather data:", error);
+        }
+      });
+
+      // Function to fetch weather data for major cities and update the cities section
+      async function updateCitiesWeather() {
+        const cities = ["New York", "London", "Tokyo", "Sydney"];
+
+        for (const city of cities) {
+          try {
+            const response = await fetch(
+              `https://api.openweathermap.org/data/2.5/weather?q=${city}&appid=${apiKey}&units=imperial`
+            );
+            const data = await response.json();
+
+            // Find the city element and update its weather info
+            const cityElements = document.querySelectorAll(".city-item");
+            cityElements.forEach((element) => {
+              const cityNameElement = element.querySelector(".city-name");
+              if (
+                cityNameElement &&
+                cityNameElement.textContent.includes(city)
+              ) {
+                const cityWeatherElement =
+                  element.querySelector(".city-weather");
+                cityWeatherElement.textContent = `${Math.round(
+                  data.main.temp
+                )}°F, ${data.weather[0].description}`;
+              }
+            });
+          } catch (error) {
+            console.error(`Error fetching weather for ${city}:`, error);
+          }
+        }
+      }
+
+      // Call the function to update cities weather
+      updateCitiesWeather();
+    </script>
+  </body>
+</html>
