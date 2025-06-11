@@ -4,7 +4,7 @@ from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 import schedule
 import time
@@ -12,6 +12,8 @@ import threading
 import logging
 import psycopg2
 import uuid
+import pandas as pd
+import numpy as np
 from datetime import datetime, timedelta
 from pymongo import MongoClient
 from passlib.context import CryptContext
@@ -31,23 +33,24 @@ app = FastAPI()
 # --- CORS Middleware ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 🔒 Replace "*" with specific domains in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # --- Static Files Mounting ---
-app.mount("/static", StaticFiles(directory=r"C:\Users\rhythm\Desktop\cloudwatch web\frontend"), name="static")
+app.mount("/static", StaticFiles(directory=r"C:\Users\rhythm\Desktop\cloudwatchw\frontend"), name="static")
 
 # --- MongoDB Setup ---
 mongo_client = MongoClient("mongodb://localhost:27017/")  # Change with your MongoDB URI
 mongo_db = mongo_client["cloudwatch"]  # Replace with your database name
 mongo_collection = mongo_db["weather"]  # Replace with your collection name
 users_collection = mongo_db["users"]  # Collection for user data
+reports_collection = mongo_db["reports"]  # Collection for user reports
 
 # --- JWT Settings ---
-SECRET_KEY = "YOUR_SECRET_KEY_HERE"  # 🔒 Use a strong random key in production
+SECRET_KEY = "key"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
 
@@ -94,6 +97,28 @@ class Token(BaseModel):
 
 class TokenData(BaseModel):
     email: Optional[str] = None
+
+class ReportBase(BaseModel):
+    report_type: str
+    description: str
+    email: Optional[str] = None
+    location: Optional[str] = None
+    
+class WeatherReport(ReportBase):
+    weather_condition: Optional[str] = None
+    actual_weather: Optional[str] = None
+    predicted_weather: Optional[str] = None
+    date_of_issue: Optional[str] = None
+
+class AppReport(ReportBase):
+    device_type: Optional[str] = None
+    operating_system: Optional[str] = None
+    app_version: Optional[str] = None
+    steps_to_reproduce: Optional[str] = None
+
+class OtherReport(ReportBase):
+    report_category: Optional[str] = None
+    subject: Optional[str] = None
 
 # --- Helper Functions ---
 def verify_password(plain_password, hashed_password):
@@ -231,6 +256,7 @@ async def add_location(location: Location, current_user: User = Depends(get_curr
         logger.error(f"❌ Error fetching initial weather: {e}")
     
     return {"status": "success", "location": new_location}
+
 @app.get("/api/my-locations")
 async def get_my_locations(current_user: User = Depends(get_current_user)):
     user = users_collection.find_one({"email": current_user.email})
@@ -303,6 +329,7 @@ async def get_user_weather(current_user: User = Depends(get_current_user)):
     
     print(f"Returning {len(weather_data)} weather entries")
     return {"user_weather": weather_data}
+
 # --- Scheduled Weather Fetch & Store Job ---
 def scheduled_job():
     try:
@@ -365,7 +392,7 @@ threading.Thread(target=run_scheduler, daemon=True).start()
 # --- Serve Frontend HTML ---
 @app.get("/")
 async def get_index():
-    return FileResponse(r"C:\Users\rhythm\Desktop\cloudwatch web\frontend\index.html")
+    return FileResponse(r"C:\Users\rhythm\Desktop\cloudwatchw\frontend\index.html")
 
 # --- API to Get Latest Weather Data ---
 @app.get("/api/get-latest-weather")
@@ -500,34 +527,6 @@ async def debug_endpoint():
 @app.get("/api/me", response_model=User)
 async def get_user_profile(current_user: User = Depends(get_current_user)):
     return current_user
-# Add this to your main.py file (after your other imports)
-from typing import Optional, List, Dict, Any
-
-# --- Models for Reports ---
-class ReportBase(BaseModel):
-    report_type: str
-    description: str
-    email: Optional[str] = None
-    location: Optional[str] = None
-    
-class WeatherReport(ReportBase):
-    weather_condition: Optional[str] = None
-    actual_weather: Optional[str] = None
-    predicted_weather: Optional[str] = None
-    date_of_issue: Optional[str] = None
-
-class AppReport(ReportBase):
-    device_type: Optional[str] = None
-    operating_system: Optional[str] = None
-    app_version: Optional[str] = None
-    steps_to_reproduce: Optional[str] = None
-
-class OtherReport(ReportBase):
-    report_category: Optional[str] = None
-    subject: Optional[str] = None
-
-# --- Setup Reports Collection ---
-reports_collection = mongo_db["reports"]  # Collection for user reports
 
 # --- Report Endpoints ---
 @app.post("/api/submit-report")
@@ -551,6 +550,7 @@ async def submit_report(report_data: Dict[str, Any]):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to submit report: {str(e)}"
         )
+        
 # --- Weather Alerts Endpoint ---
 @app.get("/api/weather-alerts")
 async def get_weather_alerts(current_user: User = Depends(get_current_user)):
@@ -580,7 +580,7 @@ async def get_weather_alerts(current_user: User = Depends(get_current_user)):
             location_name = loc.get("name", f"Location ({loc['latitude']:.2f}, {loc['longitude']:.2f})")
             
             # Check for extreme temperatures (high)
-            if latest_weather.get("temperature") and latest_weather["temperature"] >= 30:
+            if latest_weather.get("temperature") and latest_weather["temperature"] >= 35:
                 alerts.append({
                     "location_name": location_name,
                     "severity": "severe",

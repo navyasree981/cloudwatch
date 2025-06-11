@@ -130,7 +130,7 @@ function showLocationError(message) {
 // Auto-refresh every 10 seconds
 setInterval(fetchWeatherData, 10000);
 
-// Weather icon mapping remains the same
+// Weather icon mapping
 function getWeatherIcon(condition) {
   const icons = {
     Clouds: "fas fa-cloud",

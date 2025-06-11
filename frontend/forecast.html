@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CloudWatch - 7-Day Forecast</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #3498db;
+            --secondary-color: #2980b9;
+            --background-color: #f5f7fa;
+            --card-color: #ffffff;
+            --text-color: #333333;
+            --light-text: #7f8c8d;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: var(--background-color);
+            color: var(--text-color);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            background-color: var(--primary-color);
+            color: white;
+            padding: 1rem;
+            text-align: center;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 1.8rem;
+        }
+
+        .location-selector {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: var(--card-color);
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        select {
+            padding: 10px;
+            width: 100%;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 1rem;
+            background-color: white;
+        }
+
+        .forecast-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            justify-content: space-between;
+        }
+
+        .forecast-day {
+            flex: 1;
+            min-width: 150px;
+            background-color: var(--card-color);
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            transition: transform 0.2s;
+        }
+
+        .forecast-day:hover {
+            transform: translateY(-5px);
+        }
+
+        .day-name {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: var(--primary-color);
+        }
+
+        .weather-icon {
+            font-size: 2.5rem;
+            margin: 10px 0;
+            color: var(--primary-color);
+        }
+
+        .temperature {
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 50px;
+            font-size: 1.2rem;
+            color: var(--light-text);
+        }
+
+        .error-message {
+            background-color: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        .login-prompt {
+            text-align: center;
+            padding: 50px;
+            background-color: var(--card-color);
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            margin: 20px 0;
+        }
+
+        .login-button {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: background-color 0.2s;
+        }
+
+        .login-button:hover {
+            background-color: var(--secondary-color);
+        }
+
+        @media (max-width: 767px) {
+            .forecast-container {
+                flex-direction: column;
+            }
+
+            .forecast-day {
+                min-width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>CloudWatch - 7-Day Weather Forecast</h1>
+    </header>
+
+    <div class="container">
+        <div id="auth-section">
+            <!-- This will be filled based on auth status -->
+        </div>
+
+        <div id="forecast-section" style="display: none;">
+            <div class="location-selector">
+                <label for="location-select">Select a location:</label>
+                <select id="location-select">
+                    <option value="">-- Select a location --</option>
+                </select>
+            </div>
+
+            <div id="loading" class="loading">
+                <p>Please select a location to view the forecast</p>
+            </div>
+
+            <div id="forecast-display" style="display: none;">
+                <div class="forecast-container" id="forecast-container">
+                    <!-- Forecast cards will be inserted here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Check if user is logged in
+            checkAuthStatus();
+
+            // Event listener for location selector
+            const locationSelect = document.getElementById('location-select');
+            locationSelect.addEventListener('change', function() {
+                if (this.value) {
+                    fetchForecast(this.value);
+                } else {
+                    document.getElementById('loading').style.display = 'block';
+                    document.getElementById('loading').innerHTML = '<p>Please select a location to view the forecast</p>';
+                    document.getElementById('forecast-display').style.display = 'none';
+                }
+            });
+        });
+
+        function checkAuthStatus() {
+            const token = localStorage.getItem('access_token');
+            const authSection = document.getElementById('auth-section');
+            const forecastSection = document.getElementById('forecast-section');
+
+            if (!token) {
+                // User is not logged in
+                authSection.innerHTML = `
+                    <div class="login-prompt">
+                        <h2>Login Required</h2>
+                        <p>Please login to view your weather forecasts</p>
+                        <button class="login-button" onclick="redirectToLogin()">Login</button>
+                    </div>
+                `;
+                forecastSection.style.display = 'none';
+            } else {
+                // User is logged in
+                authSection.innerHTML = '';
+                forecastSection.style.display = 'block';
+                loadUserLocations();
+            }
+        }
+
+        function redirectToLogin() {
+            // Redirect to login page
+            window.location.href = 'login.html';
+        }
+
+        function loadUserLocations() {
+            const token = localStorage.getItem('access_token');
+            
+            fetch('/api/my-locations', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        // Token expired
+                        localStorage.removeItem('access_token');
+                        checkAuthStatus();
+                        throw new Error('Session expired. Please login again.');
+                    }
+                    throw new Error('Failed to load locations');
+                }
+                return response.json();
+            })
+            .then(data => {
+                const locationSelect = document.getElementById('location-select');
+                
+                // Clear existing options except the first one
+                while (locationSelect.options.length > 1) {
+                    locationSelect.remove(1);
+                }
+                
+                // Add new options
+                data.locations.forEach(location => {
+                    const option = document.createElement('option');
+                    option.value = location.id;
+                    option.textContent = location.name || `Location (${location.latitude.toFixed(2)}, ${location.longitude.toFixed(2)})`;
+                    locationSelect.appendChild(option);
+                });
+            })
+            .catch(error => {
+                console.error('Error loading locations:', error);
+                document.getElementById('forecast-section').innerHTML = `
+                    <div class="error-message">
+                        <p>${error.message}</p>
+                    </div>
+                `;
+            });
+        }
+
+        function fetchForecast(locationId) {
+            const token = localStorage.getItem('access_token');
+            const loadingElement = document.getElementById('loading');
+            
+            loadingElement.style.display = 'block';
+            loadingElement.innerHTML = '<p>Loading forecast data...</p>';
+            document.getElementById('forecast-display').style.display = 'none';
+            
+            fetch(`/api/forecast/${locationId}`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        localStorage.removeItem('access_token');
+                        checkAuthStatus();
+                        throw new Error('Session expired. Please login again.');
+                    }
+                    throw new Error('Failed to fetch forecast data');
+                }
+                return response.json();
+            })
+            .then(data => {
+                displayForecast(data);
+                loadingElement.style.display = 'none';
+                document.getElementById('forecast-display').style.display = 'block';
+            })
+            .catch(error => {
+                console.error('Error fetching forecast:', error);
+                loadingElement.innerHTML = `
+                    <div class="error-message">
+                        <p>${error.message}</p>
+                    </div>
+                `;
+            });
+        }
+
+        function displayForecast(data) {
+            const forecastContainer = document.getElementById('forecast-container');
+            forecastContainer.innerHTML = ''; // Clear previous forecast
+            
+            // Get location name
+            const locationName = data.location.name || `Location (${data.location.latitude.toFixed(2)}, ${data.location.longitude.toFixed(2)})`;
+            
+            // Process each day's forecast
+            data.forecast.forEach(day => {
+                const date = new Date(day.date);
+                const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
+                const monthDay = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                
+                // Determine weather icon based on temperature
+                // In a real app, you would use the actual weather condition from your API
+                let weatherIcon = 'fas fa-sun'; // Default sunny icon
+                if (day.temperature < 10) {
+                    weatherIcon = 'fas fa-snowflake'; // Cold
+                } else if (day.temperature < 20) {
+                    weatherIcon = 'fas fa-cloud'; // Cool/cloudy
+                } else if (day.temperature < 30) {
+                    weatherIcon = 'fas fa-cloud-sun'; // Warm/partly cloudy
+                } else {
+                    weatherIcon = 'fas fa-sun'; // Hot/sunny
+                }
+                
+                const forecastCard = document.createElement('div');
+                forecastCard.className = 'forecast-day';
+                forecastCard.innerHTML = `
+                    <div class="day-name">${dayName}</div>
+                    <div class="date">${monthDay}</div>
+                    <div class="weather-icon"><i class="${weatherIcon}"></i></div>
+                    <div class="temperature">${day.temperature.toFixed(1)}°C</div>
+                `;
+                
+                forecastContainer.appendChild(forecastCard);
+            });
+        }
+    </script>
+</body>
+</html>
