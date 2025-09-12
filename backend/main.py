@@ -40,7 +40,8 @@ app.add_middleware(
 )
 
 # --- Static Files Mounting ---
-app.mount("/static", StaticFiles(directory=r"C:\Users\rhythm\Desktop\cloudwatchw\frontend"), name="static")
+frontend_path = Path(__file__).parent.parent / "frontend"
+app.mount("/static", StaticFiles(directory=frontend_path), name="static")
 
 # --- MongoDB Setup ---
 mongo_client = MongoClient("mongodb+srv://navyasree:Jungkook1!@cloudwatch.tom4vt5.mongodb.net/")  # Change with your MongoDB URI
@@ -390,9 +391,12 @@ def run_scheduler():
 threading.Thread(target=run_scheduler, daemon=True).start()
 
 # --- Serve Frontend HTML ---
+index_file = frontend_path / "index.html"
+
 @app.get("/")
 async def get_index():
-    return FileResponse(r"C:\Users\rhythm\Desktop\cloudwatchw\frontend\index.html")
+    return FileResponse(index_file)
+
 
 # --- API to Get Latest Weather Data ---
 @app.get("/api/get-latest-weather")
