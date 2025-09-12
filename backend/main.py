@@ -662,3 +662,7 @@ async def get_weather_alerts(current_user: User = Depends(get_current_user)):
     except Exception as e:
         logger.error(f"❌ Error generating weather alerts: {e}")
         return {"error": "Could not retrieve weather alerts. Please try again later."}
+ 
+if __name__ == "__main__":
+    port = int(os.getenv("PORT", 8000))  # Render injects $PORT, default 8000 locally
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
