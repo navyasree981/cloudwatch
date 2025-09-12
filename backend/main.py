@@ -402,7 +402,7 @@ index_file = frontend_path / "index.html"
 async def get_index():
     return FileResponse(index_file)
 
-
+POSTGRES_URI = os.getenv("POSTGRES_URI")
 # --- API to Get Latest Weather Data ---
 @app.get("/api/get-latest-weather")
 async def get_latest_weather():
