@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from backend.app.db import connect_postgresql, connect_mongodb
+from app.db import connect_postgresql, connect_mongodb
 
 
 def store_weather_postgresql(weather):

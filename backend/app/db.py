@@ -1,6 +1,6 @@
 import psycopg2
 from pymongo import MongoClient
-from backend.app.config import POSTGRES_URI, MONGODB_URI, MONGODB_DB
+from app.config import POSTGRES_URI, MONGODB_URI, MONGODB_DB
 
 # Connect to PostgreSQL with PostGIS
 def connect_postgresql():

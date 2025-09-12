@@ -19,9 +19,9 @@ from pymongo import MongoClient
 from passlib.context import CryptContext
 from jose import JWTError, jwt
 
-from backend.app.fetch_weather import fetch_weather_data
-from backend.app.store_data import store_weather_postgresql, store_weather_mongodb
-from backend.app.clear_data import clear_database
+from app.fetch_weather import fetch_weather_data
+from app.store_data import store_weather_postgresql, store_weather_mongodb
+from app.clear_data import clear_database
 
 # --- Logging Setup ---
 logging.basicConfig(level=logging.INFO)

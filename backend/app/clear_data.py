@@ -1,5 +1,5 @@
 from datetime import datetime
-from backend.app.db import connect_postgresql, connect_mongodb
+from app.db import connect_postgresql, connect_mongodb
 
 def clear_database():
     """Completely clears all weather data from both databases"""
