@@ -6,6 +6,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional, Dict, Any
 from pathlib import Path
+import os
 
 import schedule
 import time
@@ -24,6 +25,9 @@ from app.fetch_weather import fetch_weather_data
 from app.store_data import store_weather_postgresql, store_weather_mongodb
 from app.clear_data import clear_database
 
+from urllib.parse import urlparse
+
+POSTGRES_URI = os.getenv("POSTGRES_URI")
 # --- Logging Setup ---
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -382,7 +386,7 @@ def scheduled_job():
 # --- Scheduler Thread ---
 def run_scheduler():
     # Update weather every hour
-    schedule.every(5).seconds.do(scheduled_job)
+    schedule.every(30).minutes.do(scheduled_job)
     schedule.every().day.at("00:00").do(clear_database)
     logger.info("🕒 Scheduler started...")
     while True:
@@ -411,13 +415,14 @@ async def get_latest_weather():
 
         # --- Fetch Weather Data from PostgreSQL ---
         pg_data = None
+        parsed = urlparse(POSTGRES_URI)
         try:
             conn = psycopg2.connect(
-                dbname="cloudwatch",
-                user="postgres",
-                password="Jungkook1!",  # Mask or use env vars in production
-                host="localhost",
-                port="5432"
+                dbname=parsed.path[1:],
+                user=parsed.username,
+                password=parsed.password,  # Mask or use env vars in production
+                host=parsed.hostname,
+                port=parsed.port
             )
             cursor = conn.cursor()
             cursor.execute("""
@@ -670,4 +675,4 @@ async def get_weather_alerts(current_user: User = Depends(get_current_user)):
  
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))  # Render injects $PORT, default 8000 locally
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=port)

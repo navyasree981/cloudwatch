@@ -1,7 +1,7 @@
 import os
 
 # PostgreSQL
-POSTGRES_URI = os.getenv("POSTGRES_URI", "postgresql://postgres:Jungkook1!@localhost:5432/cloudwatch")
+POSTGRES_URI = os.getenv("POSTGRES_URI", "postgresql://cloudwatch_user:8V1UsIKTKQ2NlTltbNTN5L8EolII2629@dpg-d3245163jp1c73dqgn0g-a/cloudwatch")
 
 # MongoDB
 API_KEY = "fb23af25eda4f16a60eb16a48f7ca7e8"
