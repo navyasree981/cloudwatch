@@ -43,7 +43,7 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory=r"C:\Users\rhythm\Desktop\cloudwatchw\frontend"), name="static")
 
 # --- MongoDB Setup ---
-mongo_client = MongoClient("mongodb+srv://navyasree:Jungkook1!@cloudwatch.tom4vt5.mongodb.net/cloudwatch?retryWrites=true&w=majority&appName=cloudwatch")  # Change with your MongoDB URI
+mongo_client = MongoClient("mongodb+srv://navyasree:Jungkook1!@cloudwatch.tom4vt5.mongodb.net/")  # Change with your MongoDB URI
 mongo_db = mongo_client["cloudwatch"]  # Replace with your database name
 mongo_collection = mongo_db["weather"]  # Replace with your collection name
 users_collection = mongo_db["users"]  # Collection for user data
