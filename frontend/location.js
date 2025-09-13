@@ -7,10 +7,16 @@ window.onload = function () {
 };
 
 let hasInitialData = false;
+let currentLatitude = null;
+let currentLongitude = null;
 
 function success(position) {
   const latitude = position.coords.latitude;
   const longitude = position.coords.longitude;
+
+  // Store current coordinates
+  currentLatitude = latitude;
+  currentLongitude = longitude;
 
   fetch("/api/send-location", {
     method: "POST",
@@ -18,12 +24,24 @@ function success(position) {
     body: JSON.stringify({ latitude, longitude }),
   })
     .then(handleResponse)
-    .then(fetchWeatherData)
+    .then(() => fetchWeatherData(latitude, longitude)) // Pass coordinates
     .catch(handleLocationError);
 }
 
-function fetchWeatherData() {
-  fetch("/api/get-latest-weather")
+function fetchWeatherData(
+  latitude = currentLatitude,
+  longitude = currentLongitude
+) {
+  // Make sure we have coordinates before making the API call
+  if (!latitude || !longitude) {
+    console.error("No coordinates available for weather fetch");
+    document.getElementById("forecast-details").textContent =
+      "Location not available";
+    return;
+  }
+
+  // Add latitude and longitude as query parameters
+  fetch(`/api/get-latest-weather?latitude=${latitude}&longitude=${longitude}`)
     .then(handleResponse)
     .then((data) => {
       updateWeatherDisplay(data);
@@ -38,7 +56,12 @@ function fetchWeatherData() {
 
 function updateWeatherDisplay(data) {
   const weather = data.mongodb_weather || data.postgresql_weather;
-  if (!weather) return;
+  if (!weather) {
+    console.error("No weather data in response:", data);
+    document.getElementById("forecast-details").textContent =
+      "No weather data available";
+    return;
+  }
 
   // Get timezone offset from weather data (default to 0 if missing)
   const tzOffset = weather.timezone_offset || 0;
@@ -127,8 +150,12 @@ function showLocationError(message) {
   errorElement.textContent = message;
 }
 
-// Auto-refresh every 10 seconds
-setInterval(fetchWeatherData, 10000);
+// Auto-refresh every 10 seconds with coordinates
+setInterval(() => {
+  if (currentLatitude && currentLongitude) {
+    fetchWeatherData(currentLatitude, currentLongitude);
+  }
+}, 10000);
 
 // Weather icon mapping
 function getWeatherIcon(condition) {

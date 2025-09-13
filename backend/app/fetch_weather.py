@@ -1,19 +1,64 @@
 import requests
 from datetime import datetime, timezone, timedelta
-import psycopg2
+from app.store_data import store_weather_mongodb
 
 API_KEY = "fb23af25eda4f16a60eb16a48f7ca7e8"
 
-def fetch_weather_data(latitude: float, longitude: float):
+def get_user_location():
+    """
+    Get user's location using IP-based geolocation
+    Returns tuple (latitude, longitude) or None if failed
+    """
+    try:
+        # Using ipapi.co for IP-based geolocation (free service)
+        response = requests.get("https://ipapi.co/json/", timeout=10)
+        
+        if response.status_code == 200:
+            location_data = response.json()
+            latitude = location_data.get("latitude")
+            longitude = location_data.get("longitude")
+            
+            if latitude is not None and longitude is not None:
+                print(f"📍 Detected location: {location_data.get('city', 'Unknown')}, {location_data.get('country_name', 'Unknown')}")
+                return float(latitude), float(longitude)
+        
+        print("⚠️ Could not detect location from IP")
+        return None
+        
+    except Exception as e:
+        print(f"❗ Error getting user location: {str(e)}")
+        return None
+
+def fetch_weather_data(latitude: float = None, longitude: float = None, use_user_location: bool = False):
+    """
+    Fetch weather data for given coordinates or user's current location
     
-    # Validate coordinates first
+    Args:
+        latitude: Latitude coordinate
+        longitude: Longitude coordinate  
+        use_user_location: If True, automatically detect user's location
+    
+    Returns:
+        dict: Weather data or None if failed
+    """
+    
+    # Get user location if requested
+    if use_user_location or (latitude is None or longitude is None):
+        location = get_user_location()
+        if location:
+            latitude, longitude = location
+        elif latitude is None or longitude is None:
+            print("❗ No coordinates provided and couldn't detect user location")
+            return None
+    
+    # Validate coordinates
     if not (-90 <= latitude <= 90) or not (-180 <= longitude <= 180):
         raise ValueError(f"Invalid coordinates: {latitude}, {longitude}")
-    # Rest of your function...
+    
     try:
         # Get weather data
         weather_url = f"http://api.openweathermap.org/data/2.5/weather?lat={latitude}&lon={longitude}&appid={API_KEY}&units=metric"
-        weather_response = requests.get(weather_url)
+        weather_response = requests.get(weather_url, timeout=10)
 
         if weather_response.status_code != 200:
             print(f"Error fetching weather data: {weather_response.status_code}")
@@ -22,7 +67,7 @@ def fetch_weather_data(latitude: float, longitude: float):
         weather = weather_response.json()
 
         # Extract timezone offset (seconds)
-        timezone_offset = weather.get("timezone", 0)  # Critical addition
+        timezone_offset = weather.get("timezone", 0)
 
         # Base weather data
         weather_info = {
@@ -39,12 +84,12 @@ def fetch_weather_data(latitude: float, longitude: float):
             "wind_speed": weather.get("wind", {}).get("speed"),
             "wind_direction": weather.get("wind", {}).get("deg"),
             "timestamp": datetime.fromtimestamp(weather.get("dt", 0), tz=timezone.utc),
-            "timezone_offset": timezone_offset,  # Added here
+            "timezone_offset": timezone_offset,
         }
 
         # Get AQI data
         aqi_url = f"http://api.openweathermap.org/data/2.5/air_pollution?lat={latitude}&lon={longitude}&appid={API_KEY}"
-        aqi_response = requests.get(aqi_url)
+        aqi_response = requests.get(aqi_url, timeout=10)
         
         if aqi_response.status_code == 200:
             aqi_data = aqi_response.json()
@@ -60,67 +105,45 @@ def fetch_weather_data(latitude: float, longitude: float):
         return None
 
 def insert_weather_data(data):
-    try:
-        conn = psycopg2.connect("postgresql://postgres:Jungkook1!@localhost:5432/cloudwatch")
-        cur = conn.cursor()
-
-        # Updated query with timezone_offset
-        query = """
-        INSERT INTO weather (
-            city, country, latitude, longitude, condition, description,
-            temperature, feels_like, humidity, pressure, wind_speed, wind_direction,
-            aqi, timezone_offset, timestamp
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """
-        
-        values = (
-            data["city"],
-            data["country"],
-            data["latitude"],
-            data["longitude"],
-            data["condition"],
-            data["description"],
-            data["temperature"],
-            data["feels_like"],
-            data["humidity"],
-            data["pressure"],
-            data["wind_speed"],
-            data["wind_direction"],
-            data["aqi"],
-            data["timezone_offset"],  # New field
-            data["timestamp"]
-        )
-
-        cur.execute(query, values)
-        conn.commit()
-        print("✅ Weather data inserted successfully")
-
-    except psycopg2.Error as e:
-        print(f"❗ Database error: {str(e)}")
-        conn.rollback()
-    finally:
-        if conn:
-            cur.close()
-            conn.close()
+    """
+    Store weather data in MongoDB (updated from PostgreSQL)
+    Maintains the same function name for backward compatibility
+    """
+    return store_weather_mongodb(data)
 
 def fetch_weather_postgresql():
+    """
+    Fetch latest weather data from MongoDB (updated from PostgreSQL)
+    Maintains the same function name for backward compatibility
+    """
     try:
-        conn = psycopg2.connect("postgresql://postgres:Jungkook1!@localhost:5432/cloudwatch")
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT city, country, temperature, timestamp, timezone_offset 
-            FROM weather ORDER BY timestamp DESC LIMIT 1
-        """)
+        from app.db import connect_mongodb
         
-        latest = cur.fetchone()
-        if latest:
-            print(f"🌤️ Latest weather in {latest[0]}, {latest[1]}:")
-            print(f"  Temperature: {latest[2]}°C")
-            print(f"  Recorded at: {latest[3].astimezone(timezone.utc + timedelta(seconds=latest[4]))}")
+        collection = connect_mongodb()
+        if collection is None:
+            print("❗ Could not connect to MongoDB")
+            return None
         
-    except psycopg2.Error as e:
+        # Get latest weather record
+        latest = collection.find().sort("timestamp", -1).limit(1)
+        latest_record = next(latest, None)
+        
+        if latest_record:
+            # Convert timezone offset to proper timezone for display
+            local_time = latest_record["timestamp"].astimezone(
+                timezone(timedelta(seconds=latest_record.get("timezone_offset", 0)))
+            )
+            
+            print(f"🌤️ Latest weather in {latest_record['city']}, {latest_record['country']}:")
+            print(f"  Temperature: {latest_record['temperature']}°C")
+            print(f"  Condition: {latest_record['condition']} ({latest_record['description']})")
+            print(f"  Recorded at: {local_time.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+            
+            return latest_record
+        else:
+            print("📭 No weather records found in database")
+            return None
+            
+    except Exception as e:
         print(f"❗ Database read error: {str(e)}")
-    finally:
-        if conn:
-            cur.close()
-            conn.close()
+        return None

@@ -7,13 +7,7 @@ from pydantic import BaseModel, EmailStr
 from typing import List, Optional, Dict, Any
 from pathlib import Path
 import os
-
-# Commented out scheduler imports - only reload when user presses reload
-# import schedule
-# import time
-# import threading
 import logging
-# import psycopg2  # Removed PostgreSQL dependency
 import uuid
 import pandas as pd
 import numpy as np
@@ -22,14 +16,10 @@ from pymongo import MongoClient
 from passlib.context import CryptContext
 from jose import JWTError, jwt
 
-from app.fetch_weather import fetch_weather_data
-# from app.store_data import store_weather_postgresql, store_weather_mongodb  # Modified below
+from app.fetch_weather import fetch_weather_data, get_user_location
 from app.store_data import store_weather_mongodb
-from app.clear_data import clear_database
 
-# from urllib.parse import urlparse  # Removed PostgreSQL URL parsing
 
-# POSTGRES_URI = os.getenv("POSTGRES_URI")  # Removed PostgreSQL URI
 # --- Logging Setup ---
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -51,11 +41,11 @@ frontend_path = Path(__file__).parent.parent / "frontend"
 app.mount("/static", StaticFiles(directory=frontend_path), name="static")
 
 # --- MongoDB Setup ---
-mongo_client = MongoClient(os.getenv("MONGODB_URI"))  # Change with your MongoDB URI
-mongo_db = mongo_client["cloudwatch"]  # Replace with your database name
-mongo_collection = mongo_db["weather"]  # Replace with your collection name
-users_collection = mongo_db["users"]  # Collection for user data
-reports_collection = mongo_db["reports"]  # Collection for user reports
+mongo_client = MongoClient(os.getenv("MONGODB_URI"))
+mongo_db = mongo_client["cloudwatch"]
+mongo_collection = mongo_db["weather"]
+users_collection = mongo_db["users"]
+reports_collection = mongo_db["reports"]
 
 # --- JWT Settings ---
 SECRET_KEY = "key"
@@ -65,9 +55,6 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
 # --- Password Hashing ---
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/token")
-
-# --- Global Variable to Store Latest Location (Commented - no cache) ---
-# latest_location = None
 
 # --- Models ---
 class Location(BaseModel):
@@ -146,6 +133,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     return encoded_jwt
 
 async def get_user_by_email(email: str):
+    # Always fetch fresh data from database
     user = users_collection.find_one({"email": email})
     if user:
         return UserInDB(**user)
@@ -178,33 +166,61 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         raise credentials_exception
     return user
 
-# --- Location Endpoint (Commented - no global cache) ---
+# --- Location Endpoint - Always fetch fresh data ---
 @app.post("/api/send-location")
 async def send_location(location: Location):
-    # global latest_location  # Commented out global cache
     try:
-        # latest_location = (location.latitude, location.longitude)  # Commented out cache
-        logger.info(f"📍 Received location: ({location.latitude}, {location.longitude})")
+        logger.info(f"Received location: ({location.latitude}, {location.longitude})")
         
-        # Fetch and store weather data immediately without caching
+        # Always fetch fresh weather data - no cache check
         try:
-            weather_data = fetch_weather_data(location.latitude, location.longitude)
+            weather_data = fetch_weather_data(
+                latitude=location.latitude, 
+                longitude=location.longitude
+            )
             if weather_data:
-                store_weather_mongodb(weather_data)  # Only MongoDB now
-                logger.info(f"🌦️ Weather data stored for location: ({location.latitude}, {location.longitude})")
+                success = store_weather_mongodb(weather_data)
+                if success:
+                    logger.info(f"Fresh weather data stored for location: ({location.latitude}, {location.longitude})")
+                    return {
+                        "status": "success", 
+                        "message": "Location received and fresh weather data fetched.",
+                        "weather": weather_data
+                    }
+                else:
+                    logger.warning("Weather data fetched but not stored successfully")
+                    return {
+                        "status": "partial_success",
+                        "message": "Location received, weather fetched but storage failed",
+                        "weather": weather_data
+                    }
             else:
-                logger.warning(f"⚠️ Failed to fetch weather for location: ({location.latitude}, {location.longitude})")
+                logger.warning(f"Failed to fetch weather for location: ({location.latitude}, {location.longitude})")
+                return {
+                    "status": "error",
+                    "message": "Could not fetch weather data for this location"
+                }
+        except ValueError as ve:
+            logger.error(f"Invalid coordinates: {ve}")
+            return {
+                "status": "error",
+                "message": f"Invalid coordinates: {str(ve)}"
+            }
         except Exception as e:
-            logger.error(f"❌ Error fetching weather: {e}")
-        
-        return {"status": "success", "message": "Location received and weather data fetched."}
+            logger.error(f"Error fetching weather: {e}")
+            return {
+                "status": "error",
+                "message": f"Error fetching weather: {str(e)}"
+            }
+            
     except Exception as e:
-        logger.error(f"❌ Error processing location: {e}")
+        logger.error(f"Error processing location: {e}")
         return {"status": "error", "message": f"Error processing location: {e}"}
 
 # --- User Registration ---
 @app.post("/api/register", response_model=User)
 async def register_user(user: UserCreate):
+    # Always check fresh data from database
     db_user = await get_user_by_email(user.email)
     if db_user:
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -222,7 +238,6 @@ async def register_user(user: UserCreate):
     
     users_collection.insert_one(user_dict)
     
-    # Return the user without the hashed password
     return User(
         id=user_id,
         name=user.name,
@@ -254,7 +269,7 @@ async def add_location(location: Location, current_user: User = Depends(get_curr
         "id": location_id,
         "latitude": location.latitude,
         "longitude": location.longitude,
-        "name": location.name or f"Location {len(current_user.locations) + 1}"
+        "name": location.name or f"Location {datetime.now().strftime('%H:%M:%S')}"
     }
     
     # Update user's locations in MongoDB
@@ -263,28 +278,35 @@ async def add_location(location: Location, current_user: User = Depends(get_curr
         {"$push": {"locations": new_location}}
     )
     
-    # Immediately fetch and store weather data for the new location
+    # Always fetch fresh weather data for new location
     try:
-        weather_data = fetch_weather_data(location.latitude, location.longitude)
+        weather_data = fetch_weather_data(
+            latitude=location.latitude, 
+            longitude=location.longitude
+        )
         if weather_data:
-            store_weather_mongodb(weather_data)  # Only MongoDB now
-            logger.info(f"🌦️ Immediately stored weather for new location: {new_location['name']}")
+            success = store_weather_mongodb(weather_data)
+            if success:
+                logger.info(f"Fresh weather stored for new location: {new_location['name']}")
+            else:
+                logger.warning(f"Weather fetched but not stored for: {new_location['name']}")
         else:
-            logger.warning(f"⚠️ Failed to fetch weather for new location: {new_location['name']}")
+            logger.warning(f"Failed to fetch weather for new location: {new_location['name']}")
+    except ValueError as ve:
+        logger.error(f"Invalid coordinates for new location: {ve}")
     except Exception as e:
-        logger.error(f"❌ Error fetching initial weather: {e}")
+        logger.error(f"Error fetching initial weather: {e}")
     
-    # Return success with reload instruction for frontend
     return {
         "status": "success", 
         "location": new_location,
-        "reload_required": True,  # Signal frontend to reload page
-        "message": "Location added successfully. Page will reload to show updated data."
+        "reload_required": True,
+        "message": "Location added successfully. Fresh weather data will be fetched."
     }
 
 @app.get("/api/my-locations")
 async def get_my_locations(current_user: User = Depends(get_current_user)):
-    # Always fetch fresh data from database - no caching
+    # Always fetch fresh data from database - no cache
     user = users_collection.find_one({"email": current_user.email})
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -304,101 +326,74 @@ async def remove_location(location_id: str, current_user: User = Depends(get_cur
     return {
         "status": "success", 
         "message": "Location removed",
-        "reload_required": True  # Signal frontend to reload page
+        "reload_required": True
     }
 
-# --- Get Weather for User Locations ---
+# --- Get Weather for User Locations - Always fresh data ---
 @app.get("/api/user-weather")
 async def get_user_weather(current_user: User = Depends(get_current_user)):
-    print(f"Fetching weather for user: {current_user.email}")
+    logger.info(f"Fetching FRESH weather data for user: {current_user.email}")
     
-    # Always fetch fresh user data - no caching
+    # Always fetch fresh user data from database
     user = users_collection.find_one({"email": current_user.email})
     if not user:
-        print("User not found")
+        logger.error("User not found")
         raise HTTPException(status_code=404, detail="User not found")
     
     locations = user.get("locations", [])
-    print(f"User has {len(locations)} locations: {locations}")
+    logger.info(f"User has {len(locations)} locations - fetching fresh weather for each")
     
     weather_data = []
     
     for loc in locations:
-        print(f"Looking for weather at: {loc['latitude']}, {loc['longitude']}")
+        logger.info(f"Fetching FRESH weather for: {loc['latitude']}, {loc['longitude']}")
         
-        # Find the latest weather data for this location using a range query - no caching
-        latest_weather = mongo_collection.find_one(
-            {
-                "latitude": {"$gte": loc["latitude"] - 0.001, "$lte": loc["latitude"] + 0.001},
-                "longitude": {"$gte": loc["longitude"] - 0.001, "$lte": loc["longitude"] + 0.001}
-            },
-            sort=[("timestamp", -1)]
-        )
-        
-        if latest_weather:
-            timezone_offset = latest_weather.get("timezone_offset", 0)
-            utc_timestamp = latest_weather["timestamp"]
-            local_timestamp = utc_timestamp + timedelta(seconds=timezone_offset)
-            print(f"Found weather data: {latest_weather['condition']}, {latest_weather['temperature']}°C")
-            weather_entry = {
-                "temperature": latest_weather.get("temperature"),
-                "feels_like": latest_weather.get("feels_like"),
-                "condition": latest_weather.get("condition"),
-                "humidity": latest_weather.get("humidity"),
-                "wind_speed": latest_weather.get("wind_speed"),
-                "pressure": latest_weather.get("pressure"),
-                "timestamp": latest_weather["timestamp"].isoformat(),  # UTC time
-                "timezone_offset": latest_weather.get("timezone_offset", 0)
-                }
+        try:
+            # Always fetch fresh weather data from API - no cache check
+            fresh_weather = fetch_weather_data(
+                latitude=loc["latitude"], 
+                longitude=loc["longitude"]
+            )
             
+            if fresh_weather:
+                # Store the fresh data
+                store_weather_mongodb(fresh_weather)
+                
+                timezone_offset = fresh_weather.get("timezone_offset", 0)
+                logger.info(f"Fresh weather data: {fresh_weather['condition']}, {fresh_weather['temperature']}°C")
+                
+                weather_entry = {
+                    "temperature": fresh_weather.get("temperature"),
+                    "feels_like": fresh_weather.get("feels_like"),
+                    "condition": fresh_weather.get("condition"),
+                    "humidity": fresh_weather.get("humidity"),
+                    "wind_speed": fresh_weather.get("wind_speed"),
+                    "pressure": fresh_weather.get("pressure"),
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "timezone_offset": timezone_offset,
+                    "city": fresh_weather.get("city"),
+                    "country": fresh_weather.get("country")
+                }
+                
+                weather_data.append({
+                    "location": loc,
+                    "weather": weather_entry
+                })
+            else:
+                logger.warning(f"Failed to fetch fresh weather for location {loc.get('name', 'Unknown')}")
+                weather_data.append({
+                    "location": loc,
+                    "weather": None
+                })
+        except Exception as e:
+            logger.error(f"Error fetching fresh weather for location {loc.get('name', 'Unknown')}: {e}")
             weather_data.append({
                 "location": loc,
-                "weather": weather_entry
+                "weather": None
             })
-        else:
-            print(f"No weather data found for location")
     
-    print(f"Returning {len(weather_data)} weather entries")
+    logger.info(f"Returning {len(weather_data)} fresh weather entries")
     return {"user_weather": weather_data}
-
-# --- Scheduled Weather Fetch & Store Job (COMMENTED OUT) ---
-# def scheduled_job():
-#     try:
-#         all_users = users_collection.find({})
-#         processed_locations = set()
-#         
-#         for user in all_users:
-#             for location in user.get("locations", []):
-#                 loc_key = (location["latitude"], location["longitude"])
-#                 if loc_key in processed_locations:
-#                     continue
-#                     
-#                 processed_locations.add(loc_key)
-#                 
-#                 try:
-#                     weather_data = fetch_weather_data(*loc_key)
-#                     if weather_data:
-#                         store_weather_mongodb(weather_data)  # Only MongoDB now
-#                         logger.info(f"✅ Scheduled update for {location.get('name', 'unnamed location')}")
-#                     else:
-#                         logger.warning(f"⚠️ Scheduled update failed for {loc_key}")
-#                 except Exception as e:
-#                     logger.error(f"❌ Scheduled job error for {loc_key}: {str(e)}")
-#         
-#     except Exception as e:
-#         logger.error(f"❌ Global scheduled job error: {str(e)}")
-
-# --- Scheduler Thread (COMMENTED OUT) ---
-# def run_scheduler():
-#     # Update weather every hour
-#     schedule.every(30).minutes.do(scheduled_job)
-#     schedule.every().day.at("00:00").do(clear_database)
-#     logger.info("🕒 Scheduler started...")
-#     while True:
-#         schedule.run_pending()
-#         time.sleep(1)
-
-# threading.Thread(target=run_scheduler, daemon=True).start()
 
 # --- Serve Frontend HTML ---
 index_file = frontend_path / "index.html"
@@ -407,75 +402,55 @@ index_file = frontend_path / "index.html"
 async def get_index():
     return FileResponse(index_file)
 
-# --- API to Get Latest Weather Data (Modified - no PostgreSQL) ---
+# --- API to Get Latest Weather Data - Always fresh ---
 @app.get("/api/get-latest-weather")
 async def get_latest_weather(latitude: float = None, longitude: float = None):
     try:
         if not latitude or not longitude:
             raise HTTPException(status_code=400, detail="Latitude and longitude are required")
 
-        # --- Fetch Weather Data from MongoDB Only ---
-        mongo_data = None
+        logger.info(f"Fetching FRESH weather data for ({latitude}, {longitude})")
+        
+        # Always fetch fresh data from API - no cache lookup
         try:
-            latest_weather_mongo = mongo_collection.find_one(
-                {
-                    "latitude": {"$gte": latitude - 0.01, "$lte": latitude + 0.01},
-                    "longitude": {"$gte": longitude - 0.01, "$lte": longitude + 0.01}
-                },
-                sort=[("timestamp", -1)]
+            weather_data = fetch_weather_data(
+                latitude=latitude, 
+                longitude=longitude
             )
-
-            if latest_weather_mongo:
-                timezone_offset = latest_weather_mongo.get("timezone_offset", 0)
-                utc_timestamp = latest_weather_mongo["timestamp"]
-                local_timestamp = utc_timestamp + timedelta(seconds=timezone_offset)
-                latest_weather_mongo["timestamp"] = local_timestamp.isoformat()
-
-                if "_id" in latest_weather_mongo:
-                    latest_weather_mongo["_id"] = str(latest_weather_mongo["_id"])
-
-                if "timestamp" in latest_weather_mongo and isinstance(latest_weather_mongo["timestamp"], datetime):
-                    latest_weather_mongo["timestamp"] = latest_weather_mongo["timestamp"].isoformat()
-
-                mongo_data = latest_weather_mongo
-                logger.info(f"🌦️ Retrieved weather from MongoDB for {mongo_data.get('city', 'Unknown')}")
+            if weather_data:
+                success = store_weather_mongodb(weather_data)
+                if success:
+                    logger.info(f"Fresh weather data fetched and stored for ({latitude}, {longitude})")
+                else:
+                    logger.warning(f"Fresh weather data fetched but storage failed for ({latitude}, {longitude})")
+                
+                return {
+                    "mongodb_weather": weather_data,
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "fresh_data": True
+                }
             else:
-                logger.warning("⚠️ No weather data found in MongoDB")
+                return {"error": "Failed to fetch fresh weather data"}
+        except ValueError as ve:
+            logger.error(f"Invalid coordinates: {ve}")
+            return {"error": f"Invalid coordinates: {str(ve)}"}
         except Exception as e:
-            logger.error(f"❌ Error retrieving weather from MongoDB: {e}")
-
-        if not mongo_data:
-            # If no data found, fetch fresh data
-            try:
-                weather_data = fetch_weather_data(latitude, longitude)
-                if weather_data:
-                    store_weather_mongodb(weather_data)
-                    # Convert the fresh data to the expected format
-                    mongo_data = weather_data
-                    logger.info(f"🌦️ Fetched fresh weather data for ({latitude}, {longitude})")
-            except Exception as e:
-                logger.error(f"❌ Error fetching fresh weather data: {e}")
-                return {"error": "No weather data available and failed to fetch fresh data"}
-
-        return {
-            "mongodb_weather": mongo_data
-        }
+            logger.error(f"Error fetching fresh weather data: {e}")
+            return {"error": f"Error fetching fresh weather data: {str(e)}"}
 
     except Exception as e:
-        logger.error(f"❌ Error retrieving weather: {e}")
+        logger.error(f"Error retrieving weather: {e}")
         return {"error": f"Error retrieving weather data: {str(e)}"}
 
+# --- Debug Endpoints ---
 @app.get("/api/debug")
 async def debug_endpoint():
     """Return raw data from MongoDB for debugging"""
     try:
-        # Get the latest record from MongoDB
         mongo_data = mongo_collection.find_one(sort=[("timestamp", -1)])
         
         if mongo_data:
-            # Convert ObjectId to string
             mongo_data["_id"] = str(mongo_data["_id"])
-            # Convert datetime to string if needed
             if isinstance(mongo_data.get("timestamp"), datetime):
                 mongo_data["timestamp"] = mongo_data["timestamp"].isoformat()
                 
@@ -485,10 +460,41 @@ async def debug_endpoint():
     except Exception as e:
         return {"error": str(e)}
 
+@app.get("/api/debug-user-locations")
+async def debug_user_locations(current_user: User = Depends(get_current_user)):
+    """Debug endpoint to check user's stored locations"""
+    user = users_collection.find_one({"email": current_user.email})
+    if not user:
+        return {"error": "User not found"}
+    
+    return {
+        "user_email": current_user.email,
+        "locations": user.get("locations", []),
+        "location_count": len(user.get("locations", [])),
+        "fetched_at": datetime.utcnow().isoformat()
+    }
+
+@app.get("/api/debug-weather-data")
+async def debug_weather_data():
+    """Debug endpoint to check all weather data in MongoDB"""
+    try:
+        weather_records = list(mongo_collection.find(
+            {},
+            {"_id": 0}
+        ).sort("timestamp", -1).limit(10))
+        
+        return {
+            "total_records": mongo_collection.count_documents({}),
+            "recent_records": weather_records,
+            "fetched_at": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
 # --- User Profile ---
 @app.get("/api/me", response_model=User)
 async def get_user_profile(current_user: User = Depends(get_current_user)):
-    # Fetch fresh user data - no caching
+    # Fetch fresh user data from database
     user = users_collection.find_one({"email": current_user.email})
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -504,13 +510,9 @@ async def get_user_profile(current_user: User = Depends(get_current_user)):
 @app.post("/api/submit-report")
 async def submit_report(report_data: Dict[str, Any]):
     try:
-        # Add timestamp to the report
         report_data["timestamp"] = datetime.utcnow()
-        
-        # Add a unique ID
         report_data["id"] = str(uuid.uuid4())
         
-        # Insert the report into MongoDB
         result = reports_collection.insert_one(report_data)
         
         logger.info(f"📝 New report submitted with ID: {result.inserted_id}")
@@ -522,12 +524,12 @@ async def submit_report(report_data: Dict[str, Any]):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to submit report: {str(e)}"
         )
-        
-# --- Weather Alerts Endpoint ---
+
+# --- Weather Alerts Endpoint - Always fresh data ---
 @app.get("/api/weather-alerts")
 async def get_weather_alerts(current_user: User = Depends(get_current_user)):
     try:
-        # Get user's locations - fetch fresh data
+        # Get fresh user data from database
         user = users_collection.find_one({"email": current_user.email})
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
@@ -535,99 +537,103 @@ async def get_weather_alerts(current_user: User = Depends(get_current_user)):
         locations = user.get("locations", [])
         alerts = []
         
-        # Process each location
+        # Process each location with fresh weather data
         for loc in locations:
-            # Find the latest weather data for this location - no caching
-            latest_weather = mongo_collection.find_one(
-                {
-                    "latitude": {"$gte": loc["latitude"] - 0.001, "$lte": loc["latitude"] + 0.001},
-                    "longitude": {"$gte": loc["longitude"] - 0.001, "$lte": loc["longitude"] + 0.001}
-                },
-                sort=[("timestamp", -1)]
-            )
+            logger.info(f"Fetching FRESH weather for alerts: {loc.get('name')}")
             
-            if not latest_weather:
-                continue
+            try:
+                # Always fetch fresh weather data for alerts
+                fresh_weather = fetch_weather_data(
+                    latitude=loc["latitude"], 
+                    longitude=loc["longitude"]
+                )
                 
-            location_name = loc.get("name", f"Location ({loc['latitude']:.2f}, {loc['longitude']:.2f})")
-            
-            # Check for extreme temperatures (high)
-            if latest_weather.get("temperature") and latest_weather["temperature"] >= 35:
-                alerts.append({
-                    "location_name": location_name,
-                    "severity": "severe",
-                    "title": "Extreme Heat",
-                    "message": f"Temperature of {latest_weather['temperature']}°C detected. Stay hydrated and avoid direct sun exposure."
-                })
-            
-            # Check for extreme temperatures (low)
-            elif latest_weather.get("temperature") and latest_weather["temperature"] <= 0:
-                alerts.append({
-                    "location_name": location_name,
-                    "severity": "moderate",
-                    "title": "Freezing Temperatures",
-                    "message": f"Temperature of {latest_weather['temperature']}°C detected. Be cautious of icy surfaces and dress warmly."
-                })
-            
-            # Check for high humidity
-            if latest_weather.get("humidity") and latest_weather["humidity"] >= 90:
-                alerts.append({
-                    "location_name": location_name,
-                    "severity": "moderate",
-                    "title": "High Humidity",
-                    "message": f"Humidity level at {latest_weather['humidity']}%. This may cause discomfort."
-                })
-            
-            # Check for precipitation (rain, snow, etc.)
-            if latest_weather.get("condition"):
-                condition = latest_weather["condition"].lower()
+                if not fresh_weather:
+                    continue
                 
-                # Check for rain conditions
-                if "rain" in condition or "shower" in condition or "drizzle" in condition:
-                    alerts.append({
-                        "location_name": location_name,
-                        "severity": "normal",
-                        "title": "Rain Alert",
-                        "message": f"Current conditions: {latest_weather['condition']}. Consider carrying an umbrella."
-                    })
+                # Store fresh data
+                store_weather_mongodb(fresh_weather)
                 
-                # Check for storm conditions
-                elif "storm" in condition or "thunder" in condition or "lightning" in condition:
+                location_name = loc.get("name", f"Location ({loc['latitude']:.2f}, {loc['longitude']:.2f})")
+                
+                # Check for extreme temperatures (high)
+                if fresh_weather.get("temperature") and fresh_weather["temperature"] >= 35:
                     alerts.append({
                         "location_name": location_name,
                         "severity": "severe",
-                        "title": "Storm Warning",
-                        "message": f"Current conditions: {latest_weather['condition']}. Take necessary precautions."
+                        "title": "Extreme Heat",
+                        "message": f"Temperature of {fresh_weather['temperature']}°C detected. Stay hydrated and avoid direct sun exposure."
                     })
                 
-                # Check for snow conditions
-                elif "snow" in condition or "sleet" in condition or "blizzard" in condition:
+                # Check for extreme temperatures (low)
+                elif fresh_weather.get("temperature") and fresh_weather["temperature"] <= 0:
                     alerts.append({
                         "location_name": location_name,
                         "severity": "moderate",
-                        "title": "Snow Alert",
-                        "message": f"Current conditions: {latest_weather['condition']}. Road travel may be affected."
+                        "title": "Freezing Temperatures",
+                        "message": f"Temperature of {fresh_weather['temperature']}°C detected. Be cautious of icy surfaces and dress warmly."
+                    })
+                
+                # Check for high humidity
+                if fresh_weather.get("humidity") and fresh_weather["humidity"] >= 90:
+                    alerts.append({
+                        "location_name": location_name,
+                        "severity": "moderate",
+                        "title": "High Humidity",
+                        "message": f"Humidity level at {fresh_weather['humidity']}%. This may cause discomfort."
+                    })
+                
+                # Check for precipitation
+                if fresh_weather.get("condition"):
+                    condition = fresh_weather["condition"].lower()
+                    
+                    if "rain" in condition or "shower" in condition or "drizzle" in condition:
+                        alerts.append({
+                            "location_name": location_name,
+                            "severity": "normal",
+                            "title": "Rain Alert",
+                            "message": f"Current conditions: {fresh_weather['condition']}. Consider carrying an umbrella."
+                        })
+                    
+                    elif "storm" in condition or "thunder" in condition or "lightning" in condition:
+                        alerts.append({
+                            "location_name": location_name,
+                            "severity": "severe",
+                            "title": "Storm Warning",
+                            "message": f"Current conditions: {fresh_weather['condition']}. Take necessary precautions."
+                        })
+                    
+                    elif "snow" in condition or "sleet" in condition or "blizzard" in condition:
+                        alerts.append({
+                            "location_name": location_name,
+                            "severity": "moderate",
+                            "title": "Snow Alert",
+                            "message": f"Current conditions: {fresh_weather['condition']}. Road travel may be affected."
+                        })
+                
+                # Check for high wind speeds
+                if fresh_weather.get("wind_speed") and fresh_weather["wind_speed"] >= 30:
+                    alerts.append({
+                        "location_name": location_name,
+                        "severity": "moderate",
+                        "title": "High Winds",
+                        "message": f"Wind speed of {fresh_weather['wind_speed']} km/h detected. Secure loose outdoor items."
+                    })
+                
+                # Check for low pressure
+                if fresh_weather.get("pressure") and fresh_weather["pressure"] < 1000:
+                    alerts.append({
+                        "location_name": location_name,
+                        "severity": "normal",
+                        "title": "Low Pressure System",
+                        "message": f"Atmospheric pressure of {fresh_weather['pressure']} hPa detected. Weather changes likely."
                     })
             
-            # Check for high wind speeds
-            if latest_weather.get("wind_speed") and latest_weather["wind_speed"] >= 30:
-                alerts.append({
-                    "location_name": location_name,
-                    "severity": "moderate",
-                    "title": "High Winds",
-                    "message": f"Wind speed of {latest_weather['wind_speed']} km/h detected. Secure loose outdoor items."
-                })
-            
-            # Check for low pressure (potential for storms)
-            if latest_weather.get("pressure") and latest_weather["pressure"] < 1000:
-                alerts.append({
-                    "location_name": location_name,
-                    "severity": "normal",
-                    "title": "Low Pressure System",
-                    "message": f"Atmospheric pressure of {latest_weather['pressure']} hPa detected. Weather changes likely."
-                })
+            except Exception as e:
+                logger.error(f"Error fetching fresh weather for alerts at {loc.get('name')}: {e}")
+                continue
                 
-        return {"alerts": alerts}
+        return {"alerts": alerts, "generated_at": datetime.utcnow().isoformat()}
     
     except HTTPException as http_ex:
         raise http_ex
@@ -635,34 +641,115 @@ async def get_weather_alerts(current_user: User = Depends(get_current_user)):
         logger.error(f"❌ Error generating weather alerts: {e}")
         return {"error": "Could not retrieve weather alerts. Please try again later."}
 
-# --- Manual Refresh Endpoint ---
+# --- Current Location Weather ---
+@app.get("/api/get-user-location")
+async def get_current_user_location():
+    """Get user's current location using IP geolocation"""
+    try:
+        location = get_user_location()
+        if location:
+            latitude, longitude = location
+            return {
+                "status": "success",
+                "latitude": latitude,
+                "longitude": longitude,
+                "message": "Location detected successfully",
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        else:
+            return {
+                "status": "error",
+                "message": "Could not detect location"
+            }
+    except Exception as e:
+        logger.error(f"Error getting user location: {e}")
+        return {
+            "status": "error",
+            "message": f"Error detecting location: {str(e)}"
+        }
+
+@app.post("/api/weather-current-location")
+async def get_weather_current_location():
+    """Fetch fresh weather for user's current location"""
+    try:
+        # Always fetch fresh weather data
+        weather_data = fetch_weather_data(use_user_location=True)
+        if weather_data:
+            store_weather_mongodb(weather_data)
+            return {
+                "status": "success",
+                "weather": weather_data,
+                "message": f"Fresh weather fetched for {weather_data['city']}, {weather_data['country']}",
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        else:
+            return {
+                "status": "error",
+                "message": "Could not fetch weather for current location"
+            }
+    except Exception as e:
+        logger.error(f"Error fetching weather for current location: {e}")
+        return {
+            "status": "error",
+            "message": f"Error fetching weather: {str(e)}"
+        }
+
+# --- Manual Refresh Endpoint - Always fresh data ---
 @app.post("/api/refresh-weather")
 async def refresh_weather(current_user: User = Depends(get_current_user)):
-    """Manually refresh weather data for all user locations when user presses reload"""
+    """Manually refresh weather data - always fetch fresh data from API"""
     try:
+        # Get fresh user data
         user = users_collection.find_one({"email": current_user.email})
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
         
         locations = user.get("locations", [])
+        logger.info(f"Refreshing with FRESH weather data for {len(locations)} user locations")
+        
         updated_count = 0
+        failed_locations = []
         
         for location in locations:
             try:
-                weather_data = fetch_weather_data(location["latitude"], location["longitude"])
+                logger.info(f"Fetching FRESH weather for {location.get('name', 'unnamed location')} at ({location['latitude']}, {location['longitude']})")
+                
+                # Always fetch fresh data from API
+                weather_data = fetch_weather_data(
+                    latitude=location["latitude"], 
+                    longitude=location["longitude"]
+                )
+                
                 if weather_data:
-                    store_weather_mongodb(weather_data)
-                    updated_count += 1
-                    logger.info(f"✅ Refreshed weather for {location.get('name', 'unnamed location')}")
+                    success = store_weather_mongodb(weather_data)
+                    if success:
+                        updated_count += 1
+                        logger.info(f"✅ Fresh weather data stored for {location.get('name', 'unnamed location')}")
+                    else:
+                        failed_locations.append(location.get('name', 'unnamed location'))
+                        logger.warning(f"⚠️ Fresh weather fetched but not stored for {location.get('name', 'unnamed location')}")
                 else:
-                    logger.warning(f"⚠️ Failed to refresh weather for {location.get('name', 'unnamed location')}")
+                    failed_locations.append(location.get('name', 'unnamed location'))
+                    logger.warning(f"❌ Failed to fetch fresh weather for {location.get('name', 'unnamed location')}")
+            except ValueError as ve:
+                failed_locations.append(location.get('name', 'unnamed location'))
+                logger.error(f"❌ Invalid coordinates for location {location.get('name', 'unnamed location')}: {ve}")
             except Exception as e:
+                failed_locations.append(location.get('name', 'unnamed location'))
                 logger.error(f"❌ Error refreshing weather for location {location.get('name', 'unnamed location')}: {e}")
+        
+        message = f"Fresh weather data fetched for {updated_count} out of {len(locations)} locations"
+        if failed_locations:
+            message += f". Failed: {', '.join(failed_locations[:3])}"
         
         return {
             "status": "success",
-            "message": f"Weather data refreshed for {updated_count} out of {len(locations)} locations",
-            "updated_locations": updated_count
+            "message": message,
+            "updated_locations": updated_count,
+            "total_locations": len(locations),
+            "failed_locations": failed_locations if failed_locations else None,
+            "refresh_timestamp": datetime.utcnow().isoformat(),
+            "fresh_data": True
         }
     
     except Exception as e:
@@ -671,11 +758,33 @@ async def refresh_weather(current_user: User = Depends(get_current_user)):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to refresh weather data: {str(e)}"
         )
- 
+
+# --- City Search ---
+@app.get("/api/search-cities")
+async def search_cities(q: str, current_user: User = Depends(get_current_user)):
+    """Search for cities using OpenWeatherMap API"""
+    try:
+        if len(q.strip()) < 3:
+            return {"cities": []}
+            
+        API_KEY = os.getenv("OPENWEATHER_API_KEY", "fb23af25eda4f16a60eb16a48f7ca7e8")
+        
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            url = f"https://api.openweathermap.org/geo/1.0/direct?q={q}&limit=5&appid={API_KEY}"
+            async with session.get(url) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return {"cities": data}
+                else:
+                    logger.error(f"OpenWeather API error: {response.status}")
+                    return {"cities": [], "error": "Failed to search cities"}
+                    
+    except Exception as e:
+        logger.error(f"City search error: {e}")
+        return {"cities": [], "error": str(e)}
+
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.getenv("PORT", 8000))  # Render injects $PORT, default 8000 locally
+    port = int(os.getenv("PORT", 8000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
-
-# --- Removed PostgreSQL test endpoint ---
-# @app.get("/test-pg") - Removed completely
