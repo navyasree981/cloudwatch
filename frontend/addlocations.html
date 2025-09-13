@@ -143,7 +143,28 @@
         z-index: 998;
         display: none;
       }
+      .manual-refresh-btn {
+        padding: 12px 24px;
+        background: #4caf50;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 14px;
+        margin-left: 10px;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
 
+      .manual-refresh-btn:hover {
+        background: #45a049;
+      }
+
+      .manual-refresh-btn:disabled {
+        background: #666;
+        cursor: not-allowed;
+      }
       .overlay.active {
         display: block;
       }
@@ -413,6 +434,9 @@
         <button id="addLocationBtn" class="add-location-btn" disabled>
           Add This Location
         </button>
+        <button id="manualRefreshBtn" class="manual-refresh-btn">
+          <i class="fas fa-sync-alt"></i> Refresh All Weather Data
+        </button>
 
         <!-- Error Message Display -->
         <div class="error-message" id="errorMessage"></div>
@@ -627,8 +651,10 @@
           const div = document.createElement("div");
           div.className = "suggestion-item";
           div.innerHTML = `
-            ${city.name}, ${city.state ? city.state + ", " : ""}${city.country}
-          `;
+                  ${city.name}, ${city.state ? city.state + ", " : ""}${
+            city.country
+          }
+                `;
 
           div.addEventListener("click", () => {
             document.getElementById("citySearch").value =
@@ -694,21 +720,28 @@
               });
               throw new Error(errorData.detail || "Failed to add location");
             }
-
             const responseData = await response.json();
             debug("Location added successfully", responseData);
 
-            // Reset the search field and load updated weather
-            document.getElementById("citySearch").value = "";
-            document.getElementById("addLocationBtn").disabled = true;
-            selectedLocation = null;
+            // Check if backend requests a page reload
+            if (responseData.reload_required) {
+              debug("Backend requested page reload");
+              // Show success message briefly before reloading
+              showSuccess("Location added successfully! Reloading page...");
 
-            // Hide spinner and reload weather
-            document.getElementById("loadingSpinner").style.display = "none";
-            loadUserWeather();
-
-            // Show success message
-            showSuccess("Location added successfully!");
+              // Reload the entire page after a brief delay
+              setTimeout(() => {
+                window.location.reload();
+              }, 1500);
+            } else {
+              // Fallback to normal flow if no reload requested
+              document.getElementById("citySearch").value = "";
+              document.getElementById("addLocationBtn").disabled = true;
+              selectedLocation = null;
+              document.getElementById("loadingSpinner").style.display = "none";
+              loadUserWeather();
+              showSuccess("Location added successfully!");
+            }
           } catch (error) {
             debug("Add location error", { error: error.message });
             document.getElementById("loadingSpinner").style.display = "none";
@@ -757,11 +790,11 @@
         if (weatherData.length === 0) {
           debug("No weather data to display");
           container.innerHTML = `
-            <div style="grid-column: span 3; background: #333; padding: 20px; border-radius: 6px; text-align: center;">
-                <p>You haven't added any locations yet.</p>
-                <p style="margin-top: 10px;">Use the search box above to add your first location.</p>
-            </div>
-          `;
+                  <div style="grid-column: span 3; background: #333; padding: 20px; border-radius: 6px; text-align: center;">
+                      <p>You haven't added any locations yet.</p>
+                      <p style="margin-top: 10px;">Use the search box above to add your first location.</p>
+                  </div>
+                `;
           return;
         }
 
@@ -773,46 +806,46 @@
           const weatherCard = document.createElement("div");
           weatherCard.className = "location-box";
           weatherCard.innerHTML = `
-            <div class="location-content">
-                <h3 class="location-title">${
-                  location.name || "Custom Location"
-                }</h3>
-                <div class="weather-details">
-                    ${
-                      weather
-                        ? `
-                            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
-                                <div><strong>Temperature:</strong> ${weather.temperature}°C</div>
-                                <div><strong>Feels Like:</strong> ${weather.feels_like}°C</div>
-                                <div><strong>Condition:</strong> ${weather.condition}</div>
-                                <div><strong>Humidity:</strong> ${weather.humidity}%</div>
-                                <div><strong>Wind Speed:</strong> ${weather.wind_speed} m/s</div>
-                                <div><strong>Pressure:</strong> ${weather.pressure} hPa</div>
-                            </div>
-                            <div style="margin-top: 15px; display: flex; justify-content: space-between;">
-                                <button class="refresh-btn" data-location-id="${location.id}"
-                                        style="padding: 8px 15px; background: #3a3e4a; color: white; border: none; border-radius: 4px; cursor: pointer;">
-                                    <i class="fas fa-sync-alt"></i> Refresh
-                                </button>
-                                <button class="delete-btn" data-location-id="${location.id}"
-                                        style="padding: 8px 15px; background: #ff4444; color: white; border: none; border-radius: 4px; cursor: pointer;">
-                                    <i class="fas fa-trash"></i> Delete
-                                </button>
-                            </div>
-                        `
-                        : `
-                            <div style="text-align: center; padding: 15px;">
-                                <p>Weather data not available.</p>
-                                <button class="refresh-btn" data-location-id="${location.id}"
-                                        style="padding: 8px 15px; margin-top: 10px; background: #3a3e4a; color: white; border: none; border-radius: 4px; cursor: pointer;">
-                                    <i class="fas fa-sync-alt"></i> Try Again
-                                </button>
-                            </div>
-                        `
-                    }
-                </div>
-            </div>
-          `;
+                  <div class="location-content">
+                      <h3 class="location-title">${
+                        location.name || "Custom Location"
+                      }</h3>
+                      <div class="weather-details">
+                          ${
+                            weather
+                              ? `
+                                  <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
+                                      <div><strong>Temperature:</strong> ${weather.temperature}°C</div>
+                                      <div><strong>Feels Like:</strong> ${weather.feels_like}°C</div>
+                                      <div><strong>Condition:</strong> ${weather.condition}</div>
+                                      <div><strong>Humidity:</strong> ${weather.humidity}%</div>
+                                      <div><strong>Wind Speed:</strong> ${weather.wind_speed} m/s</div>
+                                      <div><strong>Pressure:</strong> ${weather.pressure} hPa</div>
+                                  </div>
+                                  <div style="margin-top: 15px; display: flex; justify-content: space-between;">
+                                      <button class="refresh-btn" data-location-id="${location.id}"
+                                              style="padding: 8px 15px; background: #3a3e4a; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                                          <i class="fas fa-sync-alt"></i> Refresh
+                                      </button>
+                                      <button class="delete-btn" data-location-id="${location.id}"
+                                              style="padding: 8px 15px; background: #ff4444; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                                          <i class="fas fa-trash"></i> Delete
+                                      </button>
+                                  </div>
+                              `
+                              : `
+                                  <div style="text-align: center; padding: 15px;">
+                                      <p>Weather data not available.</p>
+                                      <button class="refresh-btn" data-location-id="${location.id}"
+                                              style="padding: 8px 15px; margin-top: 10px; background: #3a3e4a; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                                          <i class="fas fa-sync-alt"></i> Try Again
+                                      </button>
+                                  </div>
+                              `
+                          }
+                      </div>
+                  </div>
+                `;
 
           container.appendChild(weatherCard);
         });
@@ -828,15 +861,12 @@
                 '<i class="fas fa-spinner fa-spin"></i> Refreshing...';
               refreshBtn.disabled = true;
 
-              const response = await fetch(
-                `/api/refresh-weather/${locationId}`,
-                {
-                  method: "POST",
-                  headers: {
-                    Authorization: `Bearer ${authToken}`,
-                  },
-                }
-              );
+              const response = await fetch("/api/refresh-weather", {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${authToken}`,
+                },
+              });
 
               if (!response.ok) {
                 debug("Refresh weather API error", {
@@ -865,6 +895,7 @@
           });
         });
 
+        // Add event listeners to delete buttons
         // Add event listeners to delete buttons
         document.querySelectorAll(".delete-btn").forEach((button) => {
           button.addEventListener("click", async (e) => {
@@ -898,10 +929,24 @@
                 throw new Error("Failed to delete location");
               }
 
-              debug("Location deleted successfully", { locationId });
+              // Parse the response to check for reload requirement
+              const result = await response.json();
+              debug("Location deleted successfully", { locationId, result });
 
-              // Reload the weather data
-              loadUserWeather();
+              // Check if backend requests a page reload
+              if (result.reload_required) {
+                debug("Backend requested page reload after deletion");
+                showSuccess("Location deleted! Reloading page...");
+
+                // Reload the entire page after a brief delay
+                setTimeout(() => {
+                  window.location.reload();
+                }, 1500);
+              } else {
+                // Fallback to normal flow if no reload requested
+                loadUserWeather();
+                showSuccess("Location deleted successfully!");
+              }
             } catch (error) {
               debug("Delete location error", {
                 locationId,
@@ -914,6 +959,47 @@
           });
         });
       }
+      // Manual refresh function
+      document
+        .getElementById("manualRefreshBtn")
+        .addEventListener("click", async () => {
+          const refreshBtn = document.getElementById("manualRefreshBtn");
+
+          try {
+            debug("Manual refresh initiated");
+            refreshBtn.innerHTML =
+              '<i class="fas fa-spinner fa-spin"></i> Refreshing...';
+            refreshBtn.disabled = true;
+
+            // Call the backend refresh endpoint
+            const response = await fetch("/api/refresh-weather", {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${authToken}`,
+              },
+            });
+
+            if (!response.ok) {
+              throw new Error("Failed to refresh weather data");
+            }
+
+            const result = await response.json();
+            debug("Manual refresh completed", result);
+
+            // Reload weather data after refresh
+            await loadUserWeather();
+            showSuccess(
+              `Weather refreshed for ${result.updated_locations} locations!`
+            );
+          } catch (error) {
+            debug("Manual refresh error", { error: error.message });
+            showError("Failed to refresh weather: " + error.message);
+          } finally {
+            refreshBtn.innerHTML =
+              '<i class="fas fa-sync-alt"></i> Refresh All Weather Data';
+            refreshBtn.disabled = false;
+          }
+        });
 
       function showError(message) {
         debug("Error message shown", { message });
@@ -969,20 +1055,20 @@
         }
       });
 
-      // Setup automatic weather refresh
-      function setupWeatherPolling() {
-        debug("Setting up weather polling (every 5 seconds)");
-        // Clear any existing interval first
-        if (weatherRefreshInterval) {
-          clearInterval(weatherRefreshInterval);
-        }
+      // // Setup automatic weather refresh
+      // function setupWeatherPolling() {
+      //   debug("Setting up weather polling (every 5 seconds)");
+      //   // Clear any existing interval first
+      //   if (weatherRefreshInterval) {
+      //     clearInterval(weatherRefreshInterval);
+      //   }
 
-        // Set new interval for polling
-        weatherRefreshInterval = setInterval(() => {
-          debug("Auto-refreshing weather data");
-          loadUserWeather();
-        }, 5000); // Poll every 5 seconds
-      }
+      // Set new interval for polling
+      //   weatherRefreshInterval = setInterval(() => {
+      //     debug("Auto-refreshing weather data");
+      //     loadUserWeather();
+      //   }, 5000); // Poll every 5 seconds
+      // }
 
       // Initial auth check and application setup
       document.addEventListener("DOMContentLoaded", async () => {
@@ -995,29 +1081,29 @@
           await loadUserWeather();
 
           // Setup automatic refresh
-          setupWeatherPolling();
+          // setupWeatherPolling();
         } else {
           debug("User not authenticated");
         }
       });
 
       // Handle visibility changes to pause/resume polling when tab is inactive
-      document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState === "hidden") {
-          // Clear polling when tab is not visible
-          debug("Tab hidden, pausing weather polling");
-          if (weatherRefreshInterval) {
-            clearInterval(weatherRefreshInterval);
-            weatherRefreshInterval = null;
-          }
-        } else if (document.visibilityState === "visible" && authToken) {
-          // Resume polling when tab becomes visible again
-          debug("Tab visible, resuming weather polling");
-          setupWeatherPolling();
-          // Immediately refresh weather data
-          loadUserWeather();
-        }
-      });
+      // document.addEventListener("visibilitychange", () => {
+      //   if (document.visibilityState === "hidden") {
+      //     // Clear polling when tab is not visible
+      //     debug("Tab hidden, pausing weather polling");
+      //     if (weatherRefreshInterval) {
+      //       clearInterval(weatherRefreshInterval);
+      //       weatherRefreshInterval = null;
+      //     }
+      //   } else if (document.visibilityState === "visible" && authToken) {
+      //     // Resume polling when tab becomes visible again
+      //     debug("Tab visible, resuming weather polling");
+      //     setupWeatherPolling();
+      //     // Immediately refresh weather data
+      //     loadUserWeather();
+      //   }
+      // });
 
       // Initial debug message
       debug("Script initialized");

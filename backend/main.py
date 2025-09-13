@@ -8,11 +8,12 @@ from typing import List, Optional, Dict, Any
 from pathlib import Path
 import os
 
-import schedule
-import time
-import threading
+# Commented out scheduler imports - only reload when user presses reload
+# import schedule
+# import time
+# import threading
 import logging
-import psycopg2
+# import psycopg2  # Removed PostgreSQL dependency
 import uuid
 import pandas as pd
 import numpy as np
@@ -22,12 +23,13 @@ from passlib.context import CryptContext
 from jose import JWTError, jwt
 
 from app.fetch_weather import fetch_weather_data
-from app.store_data import store_weather_postgresql, store_weather_mongodb
+# from app.store_data import store_weather_postgresql, store_weather_mongodb  # Modified below
+from app.store_data import store_weather_mongodb
 from app.clear_data import clear_database
 
-from urllib.parse import urlparse
+# from urllib.parse import urlparse  # Removed PostgreSQL URL parsing
 
-POSTGRES_URI = os.getenv("POSTGRES_URI")
+# POSTGRES_URI = os.getenv("POSTGRES_URI")  # Removed PostgreSQL URI
 # --- Logging Setup ---
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -49,7 +51,7 @@ frontend_path = Path(__file__).parent.parent / "frontend"
 app.mount("/static", StaticFiles(directory=frontend_path), name="static")
 
 # --- MongoDB Setup ---
-mongo_client = MongoClient("mongodb+srv://navyasree:Jungkook1!@cloudwatch.tom4vt5.mongodb.net/")  # Change with your MongoDB URI
+mongo_client = MongoClient(os.getenv("MONGODB_URI"))  # Change with your MongoDB URI
 mongo_db = mongo_client["cloudwatch"]  # Replace with your database name
 mongo_collection = mongo_db["weather"]  # Replace with your collection name
 users_collection = mongo_db["users"]  # Collection for user data
@@ -64,8 +66,8 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/token")
 
-# --- Global Variable to Store Latest Location ---
-latest_location = None
+# --- Global Variable to Store Latest Location (Commented - no cache) ---
+# latest_location = None
 
 # --- Models ---
 class Location(BaseModel):
@@ -176,14 +178,26 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         raise credentials_exception
     return user
 
-# --- Location Endpoint ---
+# --- Location Endpoint (Commented - no global cache) ---
 @app.post("/api/send-location")
 async def send_location(location: Location):
-    global latest_location
+    # global latest_location  # Commented out global cache
     try:
-        latest_location = (location.latitude, location.longitude)
-        logger.info(f"📍 Received location: {latest_location}")
-        return {"status": "success", "message": "Location received successfully."}
+        # latest_location = (location.latitude, location.longitude)  # Commented out cache
+        logger.info(f"📍 Received location: ({location.latitude}, {location.longitude})")
+        
+        # Fetch and store weather data immediately without caching
+        try:
+            weather_data = fetch_weather_data(location.latitude, location.longitude)
+            if weather_data:
+                store_weather_mongodb(weather_data)  # Only MongoDB now
+                logger.info(f"🌦️ Weather data stored for location: ({location.latitude}, {location.longitude})")
+            else:
+                logger.warning(f"⚠️ Failed to fetch weather for location: ({location.latitude}, {location.longitude})")
+        except Exception as e:
+            logger.error(f"❌ Error fetching weather: {e}")
+        
+        return {"status": "success", "message": "Location received and weather data fetched."}
     except Exception as e:
         logger.error(f"❌ Error processing location: {e}")
         return {"status": "error", "message": f"Error processing location: {e}"}
@@ -253,18 +267,24 @@ async def add_location(location: Location, current_user: User = Depends(get_curr
     try:
         weather_data = fetch_weather_data(location.latitude, location.longitude)
         if weather_data:
-            store_weather_postgresql(weather_data)
-            store_weather_mongodb(weather_data)
+            store_weather_mongodb(weather_data)  # Only MongoDB now
             logger.info(f"🌦️ Immediately stored weather for new location: {new_location['name']}")
         else:
             logger.warning(f"⚠️ Failed to fetch weather for new location: {new_location['name']}")
     except Exception as e:
         logger.error(f"❌ Error fetching initial weather: {e}")
     
-    return {"status": "success", "location": new_location}
+    # Return success with reload instruction for frontend
+    return {
+        "status": "success", 
+        "location": new_location,
+        "reload_required": True,  # Signal frontend to reload page
+        "message": "Location added successfully. Page will reload to show updated data."
+    }
 
 @app.get("/api/my-locations")
 async def get_my_locations(current_user: User = Depends(get_current_user)):
+    # Always fetch fresh data from database - no caching
     user = users_collection.find_one({"email": current_user.email})
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -281,13 +301,18 @@ async def remove_location(location_id: str, current_user: User = Depends(get_cur
     if result.modified_count == 0:
         raise HTTPException(status_code=404, detail="Location not found")
     
-    return {"status": "success", "message": "Location removed"}
+    return {
+        "status": "success", 
+        "message": "Location removed",
+        "reload_required": True  # Signal frontend to reload page
+    }
 
 # --- Get Weather for User Locations ---
 @app.get("/api/user-weather")
 async def get_user_weather(current_user: User = Depends(get_current_user)):
     print(f"Fetching weather for user: {current_user.email}")
     
+    # Always fetch fresh user data - no caching
     user = users_collection.find_one({"email": current_user.email})
     if not user:
         print("User not found")
@@ -301,7 +326,7 @@ async def get_user_weather(current_user: User = Depends(get_current_user)):
     for loc in locations:
         print(f"Looking for weather at: {loc['latitude']}, {loc['longitude']}")
         
-        # Find the latest weather data for this location using a range query
+        # Find the latest weather data for this location using a range query - no caching
         latest_weather = mongo_collection.find_one(
             {
                 "latitude": {"$gte": loc["latitude"] - 0.001, "$lte": loc["latitude"] + 0.001},
@@ -336,64 +361,44 @@ async def get_user_weather(current_user: User = Depends(get_current_user)):
     print(f"Returning {len(weather_data)} weather entries")
     return {"user_weather": weather_data}
 
-# --- Scheduled Weather Fetch & Store Job ---
-def scheduled_job():
-    try:
-        all_users = users_collection.find({})
-        processed_locations = set()
-        
-        for user in all_users:
-            for location in user.get("locations", []):
-                loc_key = (location["latitude"], location["longitude"])
-                if loc_key in processed_locations:
-                    continue
-                    
-                processed_locations.add(loc_key)
-                
-                try:
-                    weather_data = fetch_weather_data(*loc_key)
-                    if weather_data:
-                        store_weather_postgresql(weather_data)
-                        store_weather_mongodb(weather_data)
-                        logger.info(f"✅ Scheduled update for {location.get('name', 'unnamed location')}")
-                    else:
-                        logger.warning(f"⚠️ Scheduled update failed for {loc_key}")
-                except Exception as e:
-                    logger.error(f"❌ Scheduled job error for {loc_key}: {str(e)}")
-        
-        # Process latest_location (existing code)
-    except Exception as e:
-        logger.error(f"❌ Global scheduled job error: {str(e)}")
-    # Also process global latest_location if available
-    global latest_location
-    if latest_location:
-        latitude, longitude = latest_location
-        loc_key = (latitude, longitude)
-        
-        # Only process if not already processed
-        if loc_key not in processed_locations:
-            try:
-                weather_data = fetch_weather_data(latitude, longitude)
-                if weather_data:
-                    store_weather_postgresql(weather_data)
-                    store_weather_mongodb(weather_data)
-                    logger.info(f"✅ Weather data stored for global location ({latitude}, {longitude})")
-                else:
-                    logger.warning(f"⚠️ Failed to fetch weather data for global location ({latitude}, {longitude})")
-            except Exception as e:
-                logger.error(f"❌ Error during weather fetch for global location: {e}")
+# --- Scheduled Weather Fetch & Store Job (COMMENTED OUT) ---
+# def scheduled_job():
+#     try:
+#         all_users = users_collection.find({})
+#         processed_locations = set()
+#         
+#         for user in all_users:
+#             for location in user.get("locations", []):
+#                 loc_key = (location["latitude"], location["longitude"])
+#                 if loc_key in processed_locations:
+#                     continue
+#                     
+#                 processed_locations.add(loc_key)
+#                 
+#                 try:
+#                     weather_data = fetch_weather_data(*loc_key)
+#                     if weather_data:
+#                         store_weather_mongodb(weather_data)  # Only MongoDB now
+#                         logger.info(f"✅ Scheduled update for {location.get('name', 'unnamed location')}")
+#                     else:
+#                         logger.warning(f"⚠️ Scheduled update failed for {loc_key}")
+#                 except Exception as e:
+#                     logger.error(f"❌ Scheduled job error for {loc_key}: {str(e)}")
+#         
+#     except Exception as e:
+#         logger.error(f"❌ Global scheduled job error: {str(e)}")
 
-# --- Scheduler Thread ---
-def run_scheduler():
-    # Update weather every hour
-    schedule.every(30).minutes.do(scheduled_job)
-    schedule.every().day.at("00:00").do(clear_database)
-    logger.info("🕒 Scheduler started...")
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
+# --- Scheduler Thread (COMMENTED OUT) ---
+# def run_scheduler():
+#     # Update weather every hour
+#     schedule.every(30).minutes.do(scheduled_job)
+#     schedule.every().day.at("00:00").do(clear_database)
+#     logger.info("🕒 Scheduler started...")
+#     while True:
+#         schedule.run_pending()
+#         time.sleep(1)
 
-threading.Thread(target=run_scheduler, daemon=True).start()
+# threading.Thread(target=run_scheduler, daemon=True).start()
 
 # --- Serve Frontend HTML ---
 index_file = frontend_path / "index.html"
@@ -402,76 +407,14 @@ index_file = frontend_path / "index.html"
 async def get_index():
     return FileResponse(index_file)
 
-POSTGRES_URI = os.getenv("POSTGRES_URI")
-# --- API to Get Latest Weather Data ---
+# --- API to Get Latest Weather Data (Modified - no PostgreSQL) ---
 @app.get("/api/get-latest-weather")
-async def get_latest_weather():
-    global latest_location  
+async def get_latest_weather(latitude: float = None, longitude: float = None):
     try:
-        if not latest_location:
-            raise HTTPException(status_code=404, detail="No location available")
+        if not latitude or not longitude:
+            raise HTTPException(status_code=400, detail="Latitude and longitude are required")
 
-        latitude, longitude = latest_location
-
-        # --- Fetch Weather Data from PostgreSQL ---
-        pg_data = None
-        parsed = urlparse(POSTGRES_URI)
-        try:
-            conn = psycopg2.connect(
-                dbname=parsed.path[1:],
-                user=parsed.username,
-                password=parsed.password,  # Mask or use env vars in production
-                host=parsed.hostname,
-                port=parsed.port
-            )
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT 
-                    latitude, longitude, city, country,
-                    condition, description, temperature, feels_like,
-                    humidity, pressure, wind_speed, wind_direction, 
-                    timezone_offset, timestamp
-                FROM weather
-                WHERE 
-                    latitude BETWEEN %s - 0.01 AND %s + 0.01 AND
-                    longitude BETWEEN %s - 0.01 AND %s + 0.01
-                ORDER BY timestamp DESC
-                LIMIT 1
-            """, (latitude, latitude, longitude, longitude))
-            result = cursor.fetchone()
-
-            if result:
-                timezone_offset = result[12]
-                utc_timestamp = result[13]
-                local_timestamp = utc_timestamp + timedelta(seconds=timezone_offset)
-
-                pg_data = {
-                    "latitude": result[0],
-                    "longitude": result[1],
-                    "city": result[2],
-                    "country": result[3],
-                    "condition": result[4],
-                    "description": result[5],
-                    "temperature": result[6],
-                    "feels_like": result[7],
-                    "humidity": result[8],
-                    "pressure": result[9],
-                    "wind_speed": result[10],
-                    "wind_direction": result[11],
-                    "timezone_offset": timezone_offset,
-                    "timestamp": local_timestamp.isoformat()
-                }
-                logger.info(f"🌦️ Retrieved weather from PostgreSQL for {pg_data['city']}")
-            else:
-                logger.warning("⚠️ No weather data found in PostgreSQL")
-        except Exception as e:
-            logger.error(f"❌ Error retrieving weather from PostgreSQL: {e}")
-        finally:
-            if 'conn' in locals() and conn:
-                cursor.close()
-                conn.close()
-
-        # --- Fetch Weather Data from MongoDB ---
+        # --- Fetch Weather Data from MongoDB Only ---
         mongo_data = None
         try:
             latest_weather_mongo = mongo_collection.find_one(
@@ -501,11 +444,20 @@ async def get_latest_weather():
         except Exception as e:
             logger.error(f"❌ Error retrieving weather from MongoDB: {e}")
 
-        if not pg_data and not mongo_data:
-            return {"error": "No weather data available from any source"}
+        if not mongo_data:
+            # If no data found, fetch fresh data
+            try:
+                weather_data = fetch_weather_data(latitude, longitude)
+                if weather_data:
+                    store_weather_mongodb(weather_data)
+                    # Convert the fresh data to the expected format
+                    mongo_data = weather_data
+                    logger.info(f"🌦️ Fetched fresh weather data for ({latitude}, {longitude})")
+            except Exception as e:
+                logger.error(f"❌ Error fetching fresh weather data: {e}")
+                return {"error": "No weather data available and failed to fetch fresh data"}
 
         return {
-            "postgresql_weather": pg_data,
             "mongodb_weather": mongo_data
         }
 
@@ -536,7 +488,17 @@ async def debug_endpoint():
 # --- User Profile ---
 @app.get("/api/me", response_model=User)
 async def get_user_profile(current_user: User = Depends(get_current_user)):
-    return current_user
+    # Fetch fresh user data - no caching
+    user = users_collection.find_one({"email": current_user.email})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    return User(
+        id=user["id"],
+        name=user["name"],
+        email=user["email"],
+        locations=user.get("locations", [])
+    )
 
 # --- Report Endpoints ---
 @app.post("/api/submit-report")
@@ -565,7 +527,7 @@ async def submit_report(report_data: Dict[str, Any]):
 @app.get("/api/weather-alerts")
 async def get_weather_alerts(current_user: User = Depends(get_current_user)):
     try:
-        # Get user's locations
+        # Get user's locations - fetch fresh data
         user = users_collection.find_one({"email": current_user.email})
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
@@ -575,7 +537,7 @@ async def get_weather_alerts(current_user: User = Depends(get_current_user)):
         
         # Process each location
         for loc in locations:
-            # Find the latest weather data for this location
+            # Find the latest weather data for this location - no caching
             latest_weather = mongo_collection.find_one(
                 {
                     "latitude": {"$gte": loc["latitude"] - 0.001, "$lte": loc["latitude"] + 0.001},
@@ -672,7 +634,48 @@ async def get_weather_alerts(current_user: User = Depends(get_current_user)):
     except Exception as e:
         logger.error(f"❌ Error generating weather alerts: {e}")
         return {"error": "Could not retrieve weather alerts. Please try again later."}
+
+# --- Manual Refresh Endpoint ---
+@app.post("/api/refresh-weather")
+async def refresh_weather(current_user: User = Depends(get_current_user)):
+    """Manually refresh weather data for all user locations when user presses reload"""
+    try:
+        user = users_collection.find_one({"email": current_user.email})
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        locations = user.get("locations", [])
+        updated_count = 0
+        
+        for location in locations:
+            try:
+                weather_data = fetch_weather_data(location["latitude"], location["longitude"])
+                if weather_data:
+                    store_weather_mongodb(weather_data)
+                    updated_count += 1
+                    logger.info(f"✅ Refreshed weather for {location.get('name', 'unnamed location')}")
+                else:
+                    logger.warning(f"⚠️ Failed to refresh weather for {location.get('name', 'unnamed location')}")
+            except Exception as e:
+                logger.error(f"❌ Error refreshing weather for location {location.get('name', 'unnamed location')}: {e}")
+        
+        return {
+            "status": "success",
+            "message": f"Weather data refreshed for {updated_count} out of {len(locations)} locations",
+            "updated_locations": updated_count
+        }
+    
+    except Exception as e:
+        logger.error(f"❌ Error during manual weather refresh: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to refresh weather data: {str(e)}"
+        )
  
 if __name__ == "__main__":
+    import uvicorn
     port = int(os.getenv("PORT", 8000))  # Render injects $PORT, default 8000 locally
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
+# --- Removed PostgreSQL test endpoint ---
+# @app.get("/test-pg") - Removed completely
