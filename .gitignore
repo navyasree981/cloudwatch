@@ -19,3 +19,8 @@ Thumbs.db
 node_modules/
 venv/
 venv/
+echo "__pycache__/" >> .gitignore
+echo "*.pyc" >> .gitignore
+echo "*.pyo" >> .gitignore
+echo "*.pyd" >> .gitignore
+echo ".Python" >> .gitignore
