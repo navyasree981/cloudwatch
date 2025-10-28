@@ -434,9 +434,6 @@
         <button id="addLocationBtn" class="add-location-btn" disabled>
           Add This Location
         </button>
-        <button id="manualRefreshBtn" class="manual-refresh-btn">
-          <i class="fas fa-sync-alt"></i> Refresh All Weather Data
-        </button>
 
         <!-- Error Message Display -->
         <div class="error-message" id="errorMessage"></div>
@@ -848,9 +845,9 @@
                     }°C</div>
                     <div><strong>Condition:</strong> ${weather.condition}</div>
                     <div><strong>Humidity:</strong> ${weather.humidity}%</div>
-                    <div><strong>Wind Speed:</strong> ${
-                      weather.wind_speed
-                    } m/s</div>
+                    <div><strong>Wind Speed:</strong> ${(
+                      weather.wind_speed * 3.6
+                    ).toFixed(1)} km/h</div>
                     <div><strong>Pressure:</strong> ${
                       weather.pressure
                     } hPa</div>
